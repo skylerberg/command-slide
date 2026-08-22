@@ -4,7 +4,7 @@ import wasm from 'vite-plugin-wasm'
 import { resolve } from 'path'
 
 export default defineConfig({
-  base: '/',
+  base: '/command-slide/',
   plugins: [svelte(), wasm()],
   build: {
     rollupOptions: {
