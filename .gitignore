@@ -1,0 +1,7 @@
+node_modules/
+dist/
+target/
+command-slide-wasm/target/
+src/wasm-pkg/
+*.cpuprofile
+.DS_Store

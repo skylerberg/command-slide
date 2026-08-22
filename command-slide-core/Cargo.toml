@@ -1,0 +1,15 @@
+[package]
+name = "command-slide-core"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+# Wall-clock search budgets. Off by default because `Instant` panics on
+# wasm32-unknown-unknown; native consumers turn it on.
+time = ["mcts/time"]
+
+[dependencies]
+mcts.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+wyrand.workspace = true

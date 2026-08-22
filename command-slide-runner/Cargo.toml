@@ -1,0 +1,11 @@
+[package]
+name = "command-slide-runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+command-slide-core = { path = "../command-slide-core", features = ["time"] }
+serde.workspace = true
+serde_json.workspace = true
+wyrand.workspace = true
+clap = { version = "4.6", features = ["derive"] }
