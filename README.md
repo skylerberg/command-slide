@@ -18,6 +18,18 @@ npm run dev
 Requires a Rust toolchain with the `wasm32-unknown-unknown` target, and
 [`wasm-pack`](https://drager.github.io/wasm-pack/).
 
+## Deploying
+
+`.github/workflows/deploy.yml` builds the site on every push to `main` and
+publishes it to GitHub Pages at `https://skylerberg.github.io/command-slide/`.
+The workflow checks out `monte_carlo` alongside this repository so the `mcts`
+path dependency resolves, at the commit named in the `ref:` there — bump it
+deliberately rather than tracking that repository's default branch. Vite's
+`base` is pinned to `/command-slide/` to match the project-page URL; serving
+from anywhere else means changing it.
+
+Enable it under *Settings → Pages* by setting the source to *GitHub Actions*.
+
 ## Layout
 
 A Rust workspace and a Svelte frontend:
