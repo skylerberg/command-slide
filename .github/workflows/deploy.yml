@@ -36,11 +36,17 @@ jobs:
           ref: 9935aa1d3800e33afa1c5659ca4e5552f4059f9f
           path: monte_carlo
 
-      - uses: actions/setup-node@v7
+      # Installs pnpm and Node in one step, reading the pnpm version from
+      # package.json's `packageManager`. pnpm/action-setup is deprecated for
+      # pnpm 11; pnpm/setup is its replacement.
+      - uses: pnpm/setup@v2
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: command-slide/package-lock.json
+          runtime: node@24
+          cache: true
+          # The checkout lands in command-slide/, so the lockfile is not at the
+          # default location the cache key is computed from.
+          cache-dependency-path: command-slide/pnpm-lock.yaml
+          install: false
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -53,9 +59,9 @@ jobs:
       - name: Install wasm-pack
         run: curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
-      - run: npm run build
+      - run: pnpm run build
 
       - uses: actions/configure-pages@v6
 

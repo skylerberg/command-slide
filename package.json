@@ -2,10 +2,11 @@
   "name": "command-slide",
   "private": true,
   "version": "0.1.0",
+  "packageManager": "pnpm@11.21.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:wasm && vite build",
+    "build": "pnpm run build:wasm && vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json",
     "test": "vitest run",

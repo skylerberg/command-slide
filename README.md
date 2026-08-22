@@ -8,12 +8,12 @@ rules were silent, are in [RULES.md](RULES.md).
 ## Running it
 
 ```sh
-npm install
-npm run build:wasm   # compiles the Rust engine to src/wasm-pkg/
-npm run dev
+pnpm install
+pnpm run build:wasm   # compiles the Rust engine to src/wasm-pkg/
+pnpm run dev
 ```
 
-`npm run build` does both steps and emits a static site into `dist/`.
+`pnpm run build` does both steps and emits a static site into `dist/`.
 
 Requires a Rust toolchain with the `wasm32-unknown-unknown` target, and
 [`wasm-pack`](https://drager.github.io/wasm-pack/).
@@ -77,13 +77,13 @@ difficulty answers well inside a second in the browser.
 
 ```sh
 cargo test                                    # 26 engine tests
-npm test                                      # 12 frontend tests
-npm run check                                 # svelte-check
+pnpm test                                      # 12 frontend tests
+pnpm run check                                 # svelte-check
 
-npm run run-games -- bench                    # search throughput
-npm run run-games -- random --games 400       # rules terminate, both wins reachable
-npm run run-games -- replay --iterations 4000 # one game, printed move by move
-npm run run-games -- simulate --games 40 --iterations-a 20000 --iterations-b 3000
+pnpm run run-games -- bench                    # search throughput
+pnpm run run-games -- random --games 400       # rules terminate, both wins reachable
+pnpm run run-games -- replay --iterations 4000 # one game, printed move by move
+pnpm run run-games -- simulate --games 40 --iterations-a 20000 --iterations-b 3000
 ```
 
 `cargo test` covers each attack pattern against the printed diagrams, the turn
