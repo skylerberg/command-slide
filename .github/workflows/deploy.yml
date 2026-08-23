@@ -43,8 +43,12 @@ jobs:
         with:
           runtime: node@24
           cache: true
-          # The checkout lands in command-slide/, so the lockfile is not at the
-          # default location the cache key is computed from.
+          # Both of these paths resolve against GITHUB_WORKSPACE, not against
+          # the job's working-directory. The checkout lands in command-slide/,
+          # so neither file is where the action looks by default -- and a
+          # missing package.json here is fatal rather than cosmetic, because
+          # it is where the action reads the pnpm version from.
+          package-json-file: command-slide/package.json
           cache-dependency-path: command-slide/pnpm-lock.yaml
           install: false
 
