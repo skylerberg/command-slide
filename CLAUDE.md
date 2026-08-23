@@ -28,14 +28,14 @@ Rust workspace plus a Svelte frontend:
 
 ## Build & Run Commands
 
-- `npm install` — install frontend dependencies
-- `npm run dev` — Vite dev server
-- `npm run build:wasm` — rebuild the wasm bindings into `src/wasm-pkg/`
-- `npm run build` — build wasm, then the production site
-- `npm run check` — svelte-check
-- `npm test` — frontend tests (Vitest)
+- `pnpm install` — install frontend dependencies
+- `pnpm run dev` — Vite dev server
+- `pnpm run build:wasm` — rebuild the wasm bindings into `src/wasm-pkg/`
+- `pnpm run build` — build wasm, then the production site
+- `pnpm run check` — svelte-check
+- `pnpm test` — frontend tests (Vitest)
 - `cargo test` — Rust tests
-- `npm run run-games -- <subcommand>` — the runner: `simulate`, `random`,
+- `pnpm run run-games -- <subcommand>` — the runner: `simulate`, `random`,
   `replay`, `bench`
 
 ## Architecture Notes
@@ -55,13 +55,13 @@ Rust workspace plus a Svelte frontend:
   `command-slide-core/tests/wire_format.rs`. Change a serde attribute and change
   `src/data/types.ts` to match; the test is what catches the drift.
 - Changes to the evaluation in `search.rs` are judged by
-  `npm run run-games -- simulate`, playing the new numbers against the old.
+  `pnpm run run-games -- simulate`, playing the new numbers against the old.
 
 ## Testing
 
 - **Rust**: inline `#[cfg(test)]` modules in `rules.rs` plus the wire-format
   integration test. Run with `cargo test`.
-- **TypeScript**: Vitest, `src/**/*.test.ts`. Run with `npm test`.
+- **TypeScript**: Vitest, `src/**/*.test.ts`. Run with `pnpm test`.
 
 ## Code Conventions
 

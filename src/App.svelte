@@ -18,7 +18,7 @@
   <div class="notice">
     <h1>The engine failed to load</h1>
     <p>{failure}</p>
-    <p class="hint">Run <code>npm run build:wasm</code> and reload.</p>
+    <p class="hint">Run <code>pnpm run build:wasm</code> and reload.</p>
   </div>
 {:else if !ready}
   <div class="notice">
