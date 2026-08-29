@@ -45,7 +45,7 @@
     <span class="engines">
       {#each SIEGE as kind (kind)}
         <span class="engine" class:gone={!engines.includes(kind)} title={kind}>
-          <PieceIcon {kind} size={20} />
+          <PieceIcon {kind} owner={player} size={20} />
         </span>
       {/each}
     </span>
@@ -55,7 +55,7 @@
     {#each TOKEN_KINDS as kind (kind)}
       {@const token = tokenOf(game, player, kind)}
       <span class="token-chip" class:armed={token.face === 'attack'}>
-        <TokenIcon {kind} face={token.face} size={18} />
+        <TokenIcon {kind} face={token.face} owner={player} size={18} />
         <span class="where">{lineName(kind, token.line)}</span>
       </span>
     {/each}
@@ -123,7 +123,6 @@
   .engines {
     display: flex;
     gap: 6px;
-    color: var(--ink-soft);
   }
 
   .engine.gone {
