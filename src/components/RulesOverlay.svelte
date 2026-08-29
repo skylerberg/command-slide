@@ -187,9 +187,10 @@
       <p class="aside">
         Each attacker takes one shot, so a line covering four things still only takes as many as
         it has pieces to fire. Hover a slide target or a destination and the line under the board
-        says what it leads to; both sets of hints have a switch in the top bar. Decisions that
-        cannot change the position — a forced pass, a lone slide, an activation order that leads
-        to the same board either way — are taken for you and recorded in the dispatches.
+        says what it leads to; both sets of hints have a switch in the top bar. Decisions with only
+        one answer worth making — a forced pass, a lone slide, an activation order that leads to
+        the same board either way or would fire a volley at nothing — are taken for you and
+        recorded in the dispatches.
       </p>
     </section>
   </div>

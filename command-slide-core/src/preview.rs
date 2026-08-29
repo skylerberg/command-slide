@@ -11,72 +11,40 @@ use serde::{Deserialize, Serialize};
 use crate::rules::{apply, attack_preview, legal_choices, AttackReach};
 use crate::types::*;
 
-/// Positions a single [`order_matters`] enumeration may visit before it gives
+/// Positions a single [`forced_order`] enumeration may visit before it gives
 /// up. A volley is a shot per attacker, so a busy line multiplies out fast.
 /// Past the budget the interface asks the question rather than guessing at it,
 /// which costs the player one click and never a decision.
 const ORDER_BUDGET: usize = 30_000;
 
-/// Whether the two activation orders can reach different positions.
+/// The activation order to take on the player's behalf, or `None` when which
+/// one goes first is a decision worth putting to them.
 ///
-/// The player is asked to order their activations on every turn but the first,
-/// and often the answer cannot matter: a volley with nothing to shoot at is
-/// the same volley on either side of a move. Enumerating both orders to the
-/// end of the turn settles it exactly, so the interface can drop the question
-/// without ever dropping a real decision.
-pub fn order_matters(state: &GameState) -> bool {
+/// The player would otherwise be asked to order their activations on every turn
+/// but the first, and usually there is nothing in the question. A volley with
+/// nothing in range only gives ground by firing first: the move it waits for is
+/// what can arm it, and any shot it then finds may still be held, so the move
+/// leads. Past that the orders are enumerated to the end of the turn, and the
+/// question is dropped only when both reach exactly the same positions.
+pub fn forced_order(state: &GameState) -> Option<TokenKind> {
     if state.phase != Phase::Order {
-        return false;
+        return None;
     }
-    if volley_is_idle(state) {
-        return false;
-    }
-    let mut budget = ORDER_BUDGET;
-    let Some(row_first) = turn_endings(state, TokenKind::Row, &mut budget) else {
-        return true;
-    };
-    let Some(column_first) = turn_endings(state, TokenKind::Column, &mut budget) else {
-        return true;
-    };
-    row_first != column_first
-}
-
-/// Whether this turn's volley can end up with a shot to take at all.
-///
-/// A volley that never fires cannot be sequenced against — the move meets the
-/// same board on either side of it — and that is the common case by a wide
-/// margin. Settling it with a preview per move is worth a great deal over
-/// enumerating every ordering of every shot to reach the same answer.
-fn volley_is_idle(state: &GameState) -> bool {
     let player = state.current_player;
-    let Some(armed) = TOKEN_KINDS
+    let armed = TOKEN_KINDS
         .iter()
         .copied()
-        .find(|&kind| state.token(player, kind).face == TokenFace::Attack)
-    else {
-        return true;
-    };
-    if attack_preview(state, player, armed).attackers != 0 {
-        return false;
+        .find(|&kind| state.token(player, kind).face == TokenFace::Attack)?;
+    if attack_preview(state, player, armed).attackers == 0 {
+        return Some(armed.other());
     }
 
-    // Nothing on the line bears on anything, so only the move could give it a
-    // target. Take the move first and see whether any destination does.
-    let mut probe = *state;
-    apply(
-        &mut probe,
-        &Choice::Order {
-            first: armed.other(),
-        },
-    );
-    legal_choices(&probe).into_iter().all(|choice| {
-        if !matches!(choice, Choice::Move { .. }) {
-            return true;
-        }
-        let mut next = probe;
-        apply(&mut next, &choice);
-        attack_preview(&next, player, armed).attackers == 0
-    })
+    let mut budget = ORDER_BUDGET;
+    let row_first = turn_endings(state, TokenKind::Row, &mut budget)?;
+    let column_first = turn_endings(state, TokenKind::Column, &mut budget)?;
+    // Nothing separates the two, so firing first is the legible one: the volley
+    // is over and done with before the player is asked to move.
+    (row_first == column_first).then_some(armed)
 }
 
 /// Every position this turn can end on once `first` activates first, or `None`
@@ -335,8 +303,8 @@ mod tests {
         state.phase = Phase::Activate;
     }
 
-    /// A swordsman that can leave the volley line but can never carry it onto
-    /// anything: the order it activates in cannot change the position.
+    /// A swordsman that can leave the volley line but has nothing to fire at
+    /// from it, so the volley is idle until the move says otherwise.
     fn barren_volley() -> GameState {
         let mut state = empty_board();
         spare_engines(&mut state);
@@ -348,8 +316,20 @@ mod tests {
     }
 
     #[test]
-    fn order_is_no_choice_when_the_volley_has_nothing_to_shoot() {
-        assert!(!order_matters(&barren_volley()));
+    fn the_move_leads_when_the_volley_has_nothing_to_shoot() {
+        assert_eq!(forced_order(&barren_volley()), Some(TokenKind::Column));
+    }
+
+    #[test]
+    fn the_move_leads_even_when_it_is_what_arms_the_volley() {
+        // The rank the row token is armed on is empty of ours, and the column
+        // token can walk the swordsman on b7 onto it beside the enemy on d6.
+        // Firing first would throw that away, so the player is not offered it.
+        let mut state = barren_volley();
+        token(&mut state, 0, TokenKind::Row, 1, TokenFace::Attack);
+        place(&mut state, 1, 3, PieceKind::Swordsman, 1);
+
+        assert_eq!(forced_order(&state), Some(TokenKind::Column));
     }
 
     #[test]
@@ -359,18 +339,18 @@ mod tests {
         // reach b6's diagonal is exactly what spares the piece standing there.
         place(&mut state, 1, 1, PieceKind::Swordsman, 1);
 
-        assert!(order_matters(&state));
+        assert_eq!(forced_order(&state), None);
     }
 
     #[test]
-    fn order_is_no_choice_when_the_movement_line_is_empty() {
+    fn the_volley_leads_when_the_movement_line_is_empty() {
         // The movement token names a line with nothing of ours on it, so that
         // activation can only pass and the volley is all there is to sequence.
         let mut state = barren_volley();
         place(&mut state, 1, 1, PieceKind::Swordsman, 1);
         token(&mut state, 0, TokenKind::Column, 6, TokenFace::Movement);
 
-        assert!(!order_matters(&state));
+        assert_eq!(forced_order(&state), Some(TokenKind::Row));
     }
 
     #[test]
@@ -515,10 +495,12 @@ mod tests {
         assert_eq!(pending_attackers(&state), vec![Square::new(2, 4)]);
     }
 
-    /// The shortcut in `order_matters` claims to be exact, not conservative.
-    /// Random play is where that claim is cheap to keep honest.
+    /// An order taken for the player must cost them nothing: it has to reach
+    /// every position the order it replaces could have reached, and the
+    /// question may only be dropped when there is one. Random play is where
+    /// that claim is cheap to keep honest.
     #[test]
-    fn the_idle_shortcut_agrees_with_enumerating_every_ordering() {
+    fn a_taken_order_gives_up_nothing_the_other_could_have_reached() {
         use crate::rand_core::{Rng, SeedableRng};
 
         let mut rng = wyrand::WyRand::seed_from_u64(11);
@@ -532,7 +514,13 @@ mod tests {
                     let row = turn_endings(&state, TokenKind::Row, &mut budget);
                     let column = turn_endings(&state, TokenKind::Column, &mut budget);
                     if let (Some(row), Some(column)) = (row, column) {
-                        assert_eq!(order_matters(&state), row != column);
+                        match forced_order(&state) {
+                            Some(TokenKind::Row) => assert!(column.is_subset(&row)),
+                            Some(TokenKind::Column) => assert!(row.is_subset(&column)),
+                            None => {
+                                assert_ne!(row, column, "a settled order was put to the player")
+                            }
+                        }
                         compared += 1;
                     }
                 }

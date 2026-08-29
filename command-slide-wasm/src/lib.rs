@@ -2,7 +2,7 @@
 //! side never has to mirror a Rust memory layout.
 
 use command_slide_core::rand_core::SeedableRng;
-use command_slide_core::preview::{move_outcomes, order_matters, pending_attackers, slide_outcomes};
+use command_slide_core::preview::{forced_order, move_outcomes, pending_attackers, slide_outcomes};
 use command_slide_core::rules::{apply_logged, attack_preview, GameEvent};
 use command_slide_core::search::{Ai, AiConfig};
 use command_slide_core::types::{Choice, GameState, Square, TokenKind, WALL_SQUARES};
@@ -101,12 +101,11 @@ pub fn wasm_attack_preview(state_json: &str, player: u8, token_json: &str) -> St
     })
 }
 
-/// Whether the player's two activations can reach different positions. The
-/// interface asks before putting the order to them, and takes it itself when
-/// the answer is no.
+/// The activation order the interface should take on the player's behalf, or
+/// `null` when which token goes first is a decision worth putting to them.
 #[wasm_bindgen]
-pub fn wasm_order_matters(state_json: &str) -> bool {
-    order_matters(&parse_state(state_json))
+pub fn wasm_forced_order(state_json: &str) -> String {
+    to_json(&forced_order(&parse_state(state_json)))
 }
 
 /// Every move in the current activation, paired with what it puts within reach

@@ -13,7 +13,7 @@ pub mod search;
 pub mod types;
 
 pub use preview::{
-    move_outcomes, order_matters, pending_attackers, slide_outcomes, MoveOutcome, SlideOutcome,
+    forced_order, move_outcomes, pending_attackers, slide_outcomes, MoveOutcome, SlideOutcome,
 };
 pub use rules::{
     apply, apply_logged, apply_with, attack_preview, initial_state, legal_choices,
