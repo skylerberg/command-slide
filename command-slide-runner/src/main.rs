@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use clap::{Parser, Subcommand};
 use command_slide_core::rand_core::{Rng, SeedableRng};
-use command_slide_core::rules::{apply, apply_logged, legal_choices_into, GameEvent};
+use command_slide_core::rules::{apply, apply_logged, legal_choices_into, Casualty, GameEvent};
 use command_slide_core::search::{Ai, AiConfig, SearchContext};
 use command_slide_core::types::{
     Choice, GameState, Outcome, PieceKind, Square, TokenFace, TokenKind, BOARD_SIZE,
@@ -296,7 +296,7 @@ fn render(state: &GameState) -> String {
                 None => match GameState::castle_slot_at(square) {
                     Some((owner, index)) if state.castles[owner as usize][index] => '#',
                     Some(_) => 'x',
-                    None if GameState::is_hilltop(square) => '^',
+                    None if state.is_hilltop(square) => '^',
                     None => '.',
                 },
             };
@@ -317,7 +317,9 @@ fn render(state: &GameState) -> String {
         out.push(' ');
     }
     out.push('\n');
-    out.push_str("      # castle  x razed  ^ hilltop  R>/B> movement face  !! attack face\n");
+    out.push_str(
+        "      # castle  x razed castle, now a hilltop  ^ hilltop  R>/B> movement face  !! attack face\n",
+    );
     out
 }
 
@@ -331,23 +333,25 @@ fn describe(event: &GameEvent) -> String {
             from.row, from.col, to.row, to.col
         ),
         GameEvent::Passed { player, token } => {
-            format!("  P{player} has no move for its {token:?} token")
+            format!("  P{player} takes no action with its {token:?} token")
         }
-        GameEvent::Attacked { player, token, line, destroyed_pieces, destroyed_castles, .. } => {
-            let mut text = format!("  P{player} attacks with {token:?} {line}");
-            for (square, piece) in destroyed_pieces {
-                text.push_str(&format!(
-                    "\n      kills {:?} at ({},{})",
-                    piece.kind, square.row, square.col
-                ));
+        GameEvent::Volley { player, token, line } => {
+            format!("  P{player} volleys with {token:?} {line}")
+        }
+        GameEvent::Struck { player, kind, from, target, casualty, .. } => {
+            let shot = format!("  P{player} {kind:?} ({},{})", from.row, from.col);
+            match casualty {
+                Casualty::Piece { piece } => format!(
+                    "{shot} kills {:?} at ({},{})",
+                    piece.kind, target.row, target.col
+                ),
+                Casualty::Castle => {
+                    format!("{shot} razes the castle at ({},{})", target.row, target.col)
+                }
             }
-            for square in destroyed_castles {
-                text.push_str(&format!(
-                    "\n      razes the castle at ({},{})",
-                    square.row, square.col
-                ));
-            }
-            text
+        }
+        GameEvent::HeldFire { player, kind, from, .. } => {
+            format!("  P{player} {kind:?} ({},{}) holds its fire", from.row, from.col)
         }
         GameEvent::TurnEnded { .. } => String::new(),
         GameEvent::GameOver { outcome } => format!("  game over: {outcome:?}"),

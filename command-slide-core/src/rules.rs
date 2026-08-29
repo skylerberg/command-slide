@@ -13,6 +13,16 @@ const ROOK_DIRS: [(i8, i8); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
 /// Directions a bishop slides. The `Column` token's movement face uses these.
 const BISHOP_DIRS: [(i8, i8); 4] = [(-1, -1), (-1, 1), (1, -1), (1, 1)];
 
+/// What one shot destroyed. A shot destroys exactly one thing: siege engines
+/// only ever fire at castles and everything else only ever at pieces, so the
+/// two cases never overlap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum Casualty {
+    Piece { piece: Piece },
+    Castle,
+}
+
 /// What a piece did, for the UI log and for replays. The search never builds
 /// one: `apply` takes a sink that compiles away to nothing.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -31,18 +41,33 @@ pub enum GameEvent {
         from: Square,
         to: Square,
     },
-    /// A movement activation with no legal move behind it.
+    /// A movement activation spent without moving.
     Passed {
         player: u8,
         token: TokenKind,
     },
-    Attacked {
+    /// An attack activation beginning. Every shot in it follows as its own
+    /// event, because every shot is its own decision.
+    Volley {
         player: u8,
         token: TokenKind,
         line: u8,
-        attackers: Vec<Square>,
-        destroyed_pieces: Vec<(Square, Piece)>,
-        destroyed_castles: Vec<Square>,
+    },
+    /// One attacker firing at its one target.
+    Struck {
+        player: u8,
+        token: TokenKind,
+        kind: PieceKind,
+        from: Square,
+        target: Square,
+        casualty: Casualty,
+    },
+    /// An attacker that had a shot and did not take it.
+    HeldFire {
+        player: u8,
+        token: TokenKind,
+        kind: PieceKind,
+        from: Square,
     },
     TurnEnded {
         player: u8,
@@ -129,6 +154,7 @@ pub fn initial_state() -> GameState {
         phase: Phase::Slide,
         pending: [TokenKind::Row, TokenKind::Column],
         pending_len: 0,
+        attack_index: 0,
         turn: 0,
         outcome: None,
     }
@@ -155,9 +181,16 @@ fn slidable_tokens(state: &GameState) -> Vec<TokenKind> {
 
 /// Destinations for a piece under the movement face of `kind`: rook lines for
 /// the row token, bishop lines for the column token. Movement never captures,
-/// so a slide stops before any occupied square. Castles are terrain and do not
-/// block.
-fn slide_destinations_into(state: &GameState, from: Square, kind: TokenKind, out: &mut Vec<Choice>) {
+/// so a slide stops before any occupied square, and a standing enemy castle
+/// stops it too: you may neither enter one nor pass through it. Your own
+/// castles are open ground — the trebuchet opens the game standing on one.
+fn slide_destinations_into(
+    state: &GameState,
+    player: u8,
+    from: Square,
+    kind: TokenKind,
+    out: &mut Vec<Choice>,
+) {
     let dirs = match kind {
         TokenKind::Row => &ROOK_DIRS,
         TokenKind::Column => &BISHOP_DIRS,
@@ -165,7 +198,7 @@ fn slide_destinations_into(state: &GameState, from: Square, kind: TokenKind, out
     for &(drow, dcol) in dirs {
         let mut square = from;
         while let Some(next) = square.offset(drow, dcol) {
-            if state.piece_at(next).is_some() {
+            if state.piece_at(next).is_some() || state.blocks_slide(next, player) {
                 break;
             }
             out.push(Choice::Move { from, to: next });
@@ -180,11 +213,58 @@ fn movement_choices_into(state: &GameState, kind: TokenKind, out: &mut Vec<Choic
     for square in GameState::line_squares(kind, line) {
         match state.piece_at(square) {
             Some(piece) if piece.owner == player => {
-                slide_destinations_into(state, square, kind, out)
+                slide_destinations_into(state, player, square, kind, out)
             }
             _ => {}
         }
     }
+}
+
+/// Every square the piece on `from` could strike as the board stands: enemy
+/// pieces for an ordinary piece, standing enemy castles for a siege engine. A
+/// trebuchet off a hilltop throws nothing at all.
+fn strikes(state: &GameState, from: Square, piece: Piece) -> impl Iterator<Item = Square> + '_ {
+    let enemy = GameState::opponent(piece.owner);
+    let blind = piece.kind == PieceKind::Trebuchet && !state.is_hilltop(from);
+    let offsets: &'static [(i8, i8)] = if blind { &[] } else { piece.kind.attack_offsets() };
+
+    offsets
+        .iter()
+        .filter_map(move |&(drow, dcol)| from.offset(drow, dcol))
+        .filter(move |&target| {
+            if piece.kind.is_siege() {
+                state.standing_castle_at(target) == Some(enemy)
+            } else {
+                state
+                    .piece_at(target)
+                    .is_some_and(|victim| victim.owner == enemy)
+            }
+        })
+}
+
+/// The next piece of the current player's on `kind`'s line, at or after index
+/// `from`, with a shot to take. Pieces with nothing to fire at are skipped:
+/// they carry no decision, so the volley never stops on them.
+fn next_attacker(state: &GameState, kind: TokenKind, from: u8) -> Option<u8> {
+    let player = state.current_player;
+    let line = state.token(player, kind).line;
+    (from..BOARD_SIZE as u8).find(|&index| {
+        let square = GameState::line_square(kind, line, index);
+        state.piece_at(square).is_some_and(|piece| {
+            piece.owner == player && strikes(state, square, piece).next().is_some()
+        })
+    })
+}
+
+/// The attacker now choosing a target, and the piece standing on it.
+fn current_attacker(state: &GameState) -> (Square, Piece) {
+    let kind = state.pending[0];
+    let line = state.token(state.current_player, kind).line;
+    let square = GameState::line_square(kind, line, state.attack_index);
+    let piece = state
+        .piece_at(square)
+        .expect("a volley only ever stops on a piece with a shot");
+    (square, piece)
 }
 
 pub fn legal_choices_into(state: &GameState, out: &mut Vec<Choice>) {
@@ -222,13 +302,19 @@ pub fn legal_choices_into(state: &GameState, out: &mut Vec<Choice>) {
             });
         }
         Phase::Activate => {
-            // Attack activations carry no decision and are already resolved by
-            // `settle`, so the head of the queue always shows a movement face.
+            // `settle` takes every attack face into `Phase::Attack`, so the
+            // head of the queue always shows a movement face here.
             let kind = state.pending[0];
             movement_choices_into(state, kind, out);
-            if out.is_empty() {
-                out.push(Choice::Pass);
+            // "You may also flip the token and take no action."
+            out.push(Choice::Pass);
+        }
+        Phase::Attack => {
+            let (from, piece) = current_attacker(state);
+            for target in strikes(state, from, piece) {
+                out.push(Choice::Attack { from, target });
             }
+            out.push(Choice::HoldFire { from });
         }
         Phase::GameOver => {}
     }
@@ -240,21 +326,20 @@ pub fn legal_choices(state: &GameState) -> Vec<Choice> {
     out
 }
 
-/// Everything one attack activation destroys, gathered before anything is
-/// removed. Every attacker belongs to the attacking player and every casualty
-/// to their opponent, so resolution order cannot matter — but gathering first
-/// makes that fact structural rather than incidental.
+/// Everything one attack activation could strike from its line. Each attacker
+/// fires at most one of these, so this is the volley's reach and not its
+/// casualty list — which is exactly what a threat overlay wants to show.
 #[derive(Default)]
-pub struct AttackResult {
-    /// Friendly pieces in the line that struck, as a square bitboard.
+pub struct AttackReach {
+    /// Friendly pieces in the line with a shot to take, as a square bitboard.
     pub attackers: u64,
-    /// Enemy pieces struck, as a square bitboard.
+    /// Enemy pieces under threat, as a square bitboard.
     pub pieces: u64,
-    /// Enemy castles struck, indexed by slot.
+    /// Enemy castles under threat, indexed by slot.
     pub castles: [bool; CASTLES_PER_PLAYER],
 }
 
-impl AttackResult {
+impl AttackReach {
     pub fn squares(bits: u64) -> impl Iterator<Item = Square> {
         GameState::squares().filter(move |square| bits >> square.index() & 1 == 1)
     }
@@ -264,12 +349,11 @@ impl AttackResult {
     }
 }
 
-/// What an attack with `player`'s `kind` token, at its current line, would
-/// destroy. Pure: the UI calls it to preview a threat.
-pub fn attack_preview(state: &GameState, player: u8, kind: TokenKind) -> AttackResult {
+/// What an attack with `player`'s `kind` token, at its current line, bears on.
+/// Pure: the UI calls it to preview a threat.
+pub fn attack_preview(state: &GameState, player: u8, kind: TokenKind) -> AttackReach {
     let line = state.token(player, kind).line;
-    let enemy = GameState::opponent(player);
-    let mut result = AttackResult::default();
+    let mut reach = AttackReach::default();
 
     for square in GameState::line_squares(kind, line) {
         let Some(piece) = state.piece_at(square) else {
@@ -278,63 +362,49 @@ pub fn attack_preview(state: &GameState, player: u8, kind: TokenKind) -> AttackR
         if piece.owner != player {
             continue;
         }
-        // A trebuchet is a siege weapon only while it stands on a hilltop.
-        // Off one it still occupies a square and still dies like anything else,
-        // but it throws nothing.
-        if piece.kind == PieceKind::Trebuchet && !GameState::is_hilltop(square) {
-            continue;
-        }
-        result.attackers |= 1 << square.index();
-
-        for &(drow, dcol) in piece.kind.attack_offsets() {
-            let Some(target) = square.offset(drow, dcol) else {
-                continue;
-            };
+        for target in strikes(state, square, piece) {
+            reach.attackers |= 1 << square.index();
             if piece.kind.is_siege() {
-                if let Some((owner, index)) = GameState::castle_slot_at(target) {
-                    if owner == enemy && state.castles[owner as usize][index] {
-                        result.castles[index] = true;
-                    }
-                }
-            } else if let Some(victim) = state.piece_at(target) {
-                if victim.owner == enemy {
-                    result.pieces |= 1 << target.index();
-                }
+                let (_, index) =
+                    GameState::castle_slot_at(target).expect("a siege engine fires at castles");
+                reach.castles[index] = true;
+            } else {
+                reach.pieces |= 1 << target.index();
             }
         }
     }
 
-    result
+    reach
 }
 
-fn resolve_attack(state: &mut GameState, kind: TokenKind, sink: &mut impl EventSink) {
+/// Resolve one shot. Shots land as they are chosen rather than all at once, so
+/// an attacker later down the line cannot spend itself on a target an earlier
+/// one has already taken.
+fn fire(state: &mut GameState, from: Square, target: Square, sink: &mut impl EventSink) {
     let player = state.current_player;
-    let enemy = GameState::opponent(player);
-    let line = state.token(player, kind).line;
-    let result = attack_preview(state, player, kind);
+    let token = state.pending[0];
+    let piece = state
+        .piece_at(from)
+        .expect("fired with a piece that is not there");
 
-    let destroyed_pieces: Vec<(Square, Piece)> = AttackResult::squares(result.pieces)
-        .filter_map(|square| state.piece_at(square).map(|piece| (square, piece)))
-        .collect();
-    for &(square, _) in &destroyed_pieces {
-        state.set_piece(square, None);
-    }
+    let casualty = if piece.kind.is_siege() {
+        let (owner, index) =
+            GameState::castle_slot_at(target).expect("a siege engine fires at castles");
+        state.castles[owner as usize][index] = false;
+        Casualty::Castle
+    } else {
+        let victim = state.piece_at(target).expect("fired at an empty square");
+        state.set_piece(target, None);
+        Casualty::Piece { piece: victim }
+    };
 
-    let mut destroyed_castles = Vec::new();
-    for (index, &hit) in result.castles.iter().enumerate() {
-        if hit {
-            state.castles[enemy as usize][index] = false;
-            destroyed_castles.push(GameState::castle_square(enemy, index));
-        }
-    }
-
-    sink.emit(|| GameEvent::Attacked {
+    sink.emit(|| GameEvent::Struck {
         player,
-        token: kind,
-        line,
-        attackers: AttackResult::squares(result.attackers).collect(),
-        destroyed_pieces,
-        destroyed_castles,
+        token,
+        kind: piece.kind,
+        from,
+        target,
+        casualty,
     });
 }
 
@@ -360,6 +430,7 @@ fn check_outcome(state: &mut GameState) {
 fn pop_pending(state: &mut GameState) {
     state.pending[0] = state.pending[1];
     state.pending_len -= 1;
+    state.attack_index = 0;
 }
 
 fn end_turn(state: &mut GameState, sink: &mut impl EventSink) {
@@ -387,22 +458,46 @@ fn settle(state: &mut GameState, sink: &mut impl EventSink) {
             }
             return;
         }
-        if state.phase != Phase::Activate {
+        if !matches!(state.phase, Phase::Activate | Phase::Attack) {
             return;
         }
         if state.pending_len == 0 {
             end_turn(state, sink);
             continue;
         }
+        let player = state.current_player;
         let kind = state.pending[0];
-        if state.token(state.current_player, kind).face == TokenFace::Movement {
+        if state.token(player, kind).face == TokenFace::Movement {
+            state.phase = Phase::Activate;
             return;
         }
-        resolve_attack(state, kind, sink);
-        let token = state.token_mut(state.current_player, kind);
-        token.face = token.face.flipped();
-        pop_pending(state);
-        check_outcome(state);
+
+        // An attack face walks its line, stopping on each piece with a shot so
+        // that piece can pick its single target. Entering the volley announces
+        // it once; the shots themselves are separate decisions.
+        if state.phase != Phase::Attack {
+            let line = state.token(player, kind).line;
+            sink.emit(|| GameEvent::Volley {
+                player,
+                token: kind,
+                line,
+            });
+            state.phase = Phase::Attack;
+            state.attack_index = 0;
+        }
+
+        match next_attacker(state, kind, state.attack_index) {
+            Some(index) => {
+                state.attack_index = index;
+                return;
+            }
+            None => {
+                let token = state.token_mut(player, kind);
+                token.face = token.face.flipped();
+                pop_pending(state);
+                state.phase = Phase::Activate;
+            }
+        }
     }
 }
 
@@ -470,6 +565,25 @@ pub fn apply_with<S: EventSink>(state: &mut GameState, choice: &Choice, sink: &m
             slot.face = slot.face.flipped();
             pop_pending(state);
         }
+        Choice::Attack { from, target } => {
+            fire(state, from, target, sink);
+            state.attack_index += 1;
+            check_outcome(state);
+        }
+        Choice::HoldFire { from } => {
+            let token = state.pending[0];
+            let kind = state
+                .piece_at(from)
+                .expect("held fire with a piece that is not there")
+                .kind;
+            sink.emit(|| GameEvent::HeldFire {
+                player,
+                token,
+                kind,
+                from,
+            });
+            state.attack_index += 1;
+        }
     }
 
     settle(state, sink);
@@ -527,11 +641,13 @@ mod tests {
         state.phase = Phase::Activate;
     }
 
-    fn destroyed_by_attack(state: &GameState, player: u8, kind: TokenKind) -> (Vec<Square>, Vec<Square>) {
-        let result = attack_preview(state, player, kind);
+    /// The pieces and castles an attack with `kind` bears on. Each attacker
+    /// fires once, so this is the reach of the volley, not its body count.
+    fn threatened_by(state: &GameState, player: u8, kind: TokenKind) -> (Vec<Square>, Vec<Square>) {
+        let reach = attack_preview(state, player, kind);
         let enemy = GameState::opponent(player);
-        let pieces = AttackResult::squares(result.pieces).collect();
-        let castles = result
+        let pieces = AttackReach::squares(reach.pieces).collect();
+        let castles = reach
             .castles
             .iter()
             .enumerate()
@@ -539,6 +655,17 @@ mod tests {
             .map(|(index, _)| GameState::castle_square(enemy, index))
             .collect();
         (pieces, castles)
+    }
+
+    /// Play a whole volley out, taking the first shot offered at every stop.
+    fn fire_at_will(state: &mut GameState) {
+        while state.phase == Phase::Attack {
+            let shot = legal_choices(state)
+                .into_iter()
+                .find(|choice| matches!(choice, Choice::Attack { .. }))
+                .expect("a volley only stops where there is a shot to take");
+            apply(state, &shot);
+        }
     }
 
     #[test]
@@ -580,8 +707,9 @@ mod tests {
 
     #[test]
     fn hilltops_are_the_three_middle_row_squares() {
+        let state = initial_state();
         let hilltops: Vec<Square> = GameState::squares()
-            .filter(|&square| GameState::is_hilltop(square))
+            .filter(|&square| state.is_hilltop(square))
             .collect();
         assert_eq!(
             hilltops,
@@ -611,7 +739,7 @@ mod tests {
                 }
             }
             state.token_mut(0, TokenKind::Row).line = 3;
-            let (dead, castles) = destroyed_by_attack(&state, 0, TokenKind::Row);
+            let (dead, castles) = threatened_by(&state, 0, TokenKind::Row);
             let expected: Vec<Square> = targets
                 .iter()
                 .map(|&(row, col)| Square::new(row, col))
@@ -626,12 +754,114 @@ mod tests {
     }
 
     #[test]
+    fn a_volley_takes_one_target_per_attacker() {
+        // Two flails on the same row, and four enemies each of them covers.
+        let mut state = empty_board();
+        place(&mut state, 3, 1, PieceKind::Flail, 0);
+        place(&mut state, 3, 3, PieceKind::Flail, 0);
+        for (row, col) in [(2, 0), (2, 2), (4, 2), (4, 4)] {
+            place(&mut state, row, col, PieceKind::Swordsman, 1);
+        }
+        // Siege engines for both sides, off the line: without them a side has
+        // already lost and the volley ends the game mid-way.
+        for (col, kind) in [(1, PieceKind::Trebuchet), (2, PieceKind::BatteringRam)] {
+            place(&mut state, 0, col, kind, 1);
+            place(&mut state, 6, col, kind, 0);
+        }
+        arm_attack(&mut state, 0, TokenKind::Row, 3);
+        settle_state(&mut state);
+
+        assert_eq!(state.phase, Phase::Attack);
+        fire_at_will(&mut state);
+
+        // Both flails covered three of the four, and each took one.
+        assert_eq!(
+            state
+                .pieces_of(1)
+                .filter(|(_, piece)| piece.kind == PieceKind::Swordsman)
+                .count(),
+            2,
+        );
+    }
+
+    #[test]
+    fn an_attacker_may_hold_its_fire() {
+        let mut state = empty_board();
+        place(&mut state, 3, 3, PieceKind::Swordsman, 0);
+        place(&mut state, 2, 3, PieceKind::Swordsman, 1);
+        for (col, kind) in [(1, PieceKind::Trebuchet), (2, PieceKind::BatteringRam)] {
+            place(&mut state, 0, col, kind, 1);
+            place(&mut state, 6, col, kind, 0);
+        }
+        arm_attack(&mut state, 0, TokenKind::Row, 3);
+        settle_state(&mut state);
+
+        let choices = legal_choices(&state);
+        assert!(choices.contains(&Choice::Attack {
+            from: Square::new(3, 3),
+            target: Square::new(2, 3),
+        }));
+        assert!(choices.contains(&Choice::HoldFire {
+            from: Square::new(3, 3)
+        }));
+
+        apply(
+            &mut state,
+            &Choice::HoldFire {
+                from: Square::new(3, 3),
+            },
+        );
+        assert!(
+            state.piece_at(Square::new(2, 3)).is_some(),
+            "holding fire spares the target"
+        );
+        assert_ne!(state.phase, Phase::Attack, "and ends the volley");
+    }
+
+    #[test]
+    fn the_centre_trebuchet_razes_one_castle_a_turn() {
+        let mut state = empty_board();
+        place(&mut state, 3, 3, PieceKind::Trebuchet, 0);
+        place(&mut state, 6, 1, PieceKind::BatteringRam, 0);
+        place(&mut state, 0, 1, PieceKind::Trebuchet, 1);
+        place(&mut state, 0, 2, PieceKind::BatteringRam, 1);
+        arm_attack(&mut state, 0, TokenKind::Row, 3);
+        settle_state(&mut state);
+
+        // It bears on all three, and picks one of them.
+        assert_eq!(legal_choices(&state).len(), 3 + 1);
+        fire_at_will(&mut state);
+
+        assert_eq!(state.castles_standing(1), 2);
+        assert_eq!(state.outcome, None, "one volley cannot raze three castles");
+    }
+
+    #[test]
+    fn a_razed_castle_becomes_a_hilltop() {
+        let mut state = empty_board();
+        state.castles[1] = [false, true, true];
+        let rubble = GameState::castle_square(1, 0);
+        assert!(state.is_hilltop(rubble));
+
+        // From the corner it razed, a trebuchet bears on the middle castle
+        // three squares along the back rank.
+        place(&mut state, rubble.row, rubble.col, PieceKind::Trebuchet, 0);
+        state.token_mut(0, TokenKind::Row).line = rubble.row;
+        let (_, castles) = threatened_by(&state, 0, TokenKind::Row);
+        assert_eq!(castles, vec![GameState::castle_square(1, 1)]);
+
+        // And a piece may stand there, which it could not while it stood.
+        assert!(!state.blocks_slide(rubble, 0));
+        assert!(state.blocks_slide(GameState::castle_square(1, 1), 0));
+    }
+
+    #[test]
     fn a_trebuchet_on_the_centre_hilltop_reaches_every_enemy_castle() {
         let mut state = empty_board();
         place(&mut state, 3, 3, PieceKind::Trebuchet, 0);
         state.token_mut(0, TokenKind::Row).line = 3;
 
-        let (pieces, castles) = destroyed_by_attack(&state, 0, TokenKind::Row);
+        let (pieces, castles) = threatened_by(&state, 0, TokenKind::Row);
         assert!(pieces.is_empty(), "a trebuchet does not shoot at pieces");
         assert_eq!(
             castles,
@@ -645,7 +875,7 @@ mod tests {
         place(&mut state, 3, 0, PieceKind::Trebuchet, 0);
         state.token_mut(0, TokenKind::Row).line = 3;
 
-        let (_, castles) = destroyed_by_attack(&state, 0, TokenKind::Row);
+        let (_, castles) = threatened_by(&state, 0, TokenKind::Row);
         // Straight down to (6,0), and diagonally to (6,3).
         assert_eq!(castles, vec![Square::new(6, 0), Square::new(6, 3)]);
     }
@@ -668,7 +898,7 @@ mod tests {
         place(&mut state, 5, 4, PieceKind::Swordsman, 1);
         state.token_mut(0, TokenKind::Row).line = 5;
 
-        let (pieces, castles) = destroyed_by_attack(&state, 0, TokenKind::Row);
+        let (pieces, castles) = threatened_by(&state, 0, TokenKind::Row);
         assert_eq!(castles, vec![Square::new(6, 3)]);
         assert!(pieces.is_empty(), "a ram does not fight pieces");
     }
@@ -678,7 +908,7 @@ mod tests {
         let mut state = empty_board();
         place(&mut state, 5, 2, PieceKind::BatteringRam, 0);
         state.token_mut(0, TokenKind::Row).line = 5;
-        let (_, castles) = destroyed_by_attack(&state, 0, TokenKind::Row);
+        let (_, castles) = threatened_by(&state, 0, TokenKind::Row);
         assert!(castles.is_empty(), "the ram attacks straight only");
     }
 
@@ -692,7 +922,7 @@ mod tests {
         state.castles[1] = [false, true, false];
         state.token_mut(0, TokenKind::Row).line = 3;
 
-        let (pieces, castles) = destroyed_by_attack(&state, 0, TokenKind::Row);
+        let (pieces, castles) = threatened_by(&state, 0, TokenKind::Row);
         assert_eq!(pieces, vec![Square::new(2, 3)]);
         // (6,0) is already rubble; only the standing middle castle is hit.
         assert_eq!(castles, vec![Square::new(6, 3)]);
@@ -706,7 +936,7 @@ mod tests {
         place(&mut state, 3, 3, PieceKind::Spearman, 1);
         state.token_mut(0, TokenKind::Column).line = 4;
 
-        let (pieces, _) = destroyed_by_attack(&state, 0, TokenKind::Column);
+        let (pieces, _) = threatened_by(&state, 0, TokenKind::Column);
         assert_eq!(pieces, vec![Square::new(3, 3), Square::new(3, 5)]);
         // The same piece is not in the row token's line, so that token hits
         // nothing.
@@ -911,6 +1141,50 @@ mod tests {
     }
 
     #[test]
+    fn an_enemy_castle_stops_a_slide_and_a_friendly_one_does_not() {
+        let mut state = empty_board();
+        // On the enemy back rank, between their corner and middle castles.
+        place(&mut state, 6, 1, PieceKind::Swordsman, 0);
+        state.current_player = 0;
+        state.phase = Phase::Activate;
+        state.pending = [TokenKind::Row, TokenKind::Column];
+        state.pending_len = 1;
+        state.token_mut(0, TokenKind::Row).line = 6;
+
+        let destinations: Vec<Square> = legal_choices(&state)
+            .into_iter()
+            .filter_map(|choice| match choice {
+                Choice::Move { to, .. } => Some(to),
+                _ => None,
+            })
+            .collect();
+
+        assert!(!destinations.contains(&Square::new(6, 0)), "cannot enter it");
+        assert!(destinations.contains(&Square::new(6, 2)));
+        assert!(
+            !destinations.contains(&Square::new(6, 3)),
+            "the middle castle is enemy ground too"
+        );
+        assert!(
+            !destinations.contains(&Square::new(6, 4)),
+            "and a slide does not pass through it"
+        );
+
+        // Its own castles are open ground: the trebuchet opens standing on one.
+        let mut own = empty_board();
+        place(&mut own, 0, 1, PieceKind::Swordsman, 0);
+        own.current_player = 0;
+        own.phase = Phase::Activate;
+        own.pending = [TokenKind::Row, TokenKind::Column];
+        own.pending_len = 1;
+        own.token_mut(0, TokenKind::Row).line = 0;
+        assert!(legal_choices(&own).contains(&Choice::Move {
+            from: Square::new(0, 1),
+            to: Square::new(0, 0),
+        }));
+    }
+
+    #[test]
     fn the_row_token_moves_like_a_rook_and_the_column_token_like_a_bishop() {
         let mut state = empty_board();
         place(&mut state, 3, 3, PieceKind::Swordsman, 0);
@@ -929,11 +1203,13 @@ mod tests {
                 })
                 .collect();
 
-            // A rook from the centre of an empty 7x7 board reaches 12 squares;
-            // so does a bishop from (3,3), which sits on the long diagonals.
-            assert_eq!(destinations.len(), 12, "{kind:?}");
+            // A rook and a bishop each reach 12 squares from the centre of an
+            // empty 7x7 board, less the enemy castles that stop them: the
+            // middle one for the rook, both corners for the bishop.
+            assert_eq!(destinations.len(), if straight { 11 } else { 10 }, "{kind:?}");
             let has_straight = destinations.contains(&Square::new(3, 6));
-            let has_diagonal = destinations.contains(&Square::new(6, 6));
+            // Its own back-rank corner, which a slide may enter.
+            let has_diagonal = destinations.contains(&Square::new(0, 6));
             assert_eq!(has_straight, straight, "{kind:?} straight");
             assert_eq!(has_diagonal, !straight, "{kind:?} diagonal");
         }
@@ -967,9 +1243,10 @@ mod tests {
         state.castles[1] = [false, true, false];
         arm_attack(&mut state, 0, TokenKind::Row, 5);
 
-        // The queued attack is the only thing left this turn, so settling
-        // resolves it and ends the turn — and the game.
+        // The queued attack is the only thing left this turn, so taking its
+        // one shot ends the turn — and the game.
         settle_state(&mut state);
+        fire_at_will(&mut state);
         assert_eq!(state.outcome, Some(Outcome::Winner { player: 0 }));
         assert_eq!(state.phase, Phase::GameOver);
         assert!(legal_choices(&state).is_empty());
@@ -977,15 +1254,18 @@ mod tests {
 
     #[test]
     fn losing_both_siege_engines_ends_the_game() {
+        // One attacker per engine: a single piece could only take one of them.
         let mut state = empty_board();
+        place(&mut state, 3, 1, PieceKind::Swordsman, 0);
         place(&mut state, 3, 3, PieceKind::Swordsman, 0);
         place(&mut state, 0, 1, PieceKind::Trebuchet, 0);
         place(&mut state, 0, 2, PieceKind::BatteringRam, 0);
         place(&mut state, 3, 2, PieceKind::Trebuchet, 1);
-        place(&mut state, 2, 3, PieceKind::BatteringRam, 1);
+        place(&mut state, 3, 4, PieceKind::BatteringRam, 1);
         arm_attack(&mut state, 0, TokenKind::Row, 3);
 
         settle_state(&mut state);
+        fire_at_will(&mut state);
         assert_eq!(
             state.outcome,
             Some(Outcome::Winner { player: 0 }),
@@ -998,12 +1278,13 @@ mod tests {
         let mut state = empty_board();
         place(&mut state, 3, 3, PieceKind::Swordsman, 0);
         place(&mut state, 3, 2, PieceKind::Trebuchet, 1);
-        place(&mut state, 0, 0, PieceKind::BatteringRam, 1);
+        place(&mut state, 6, 1, PieceKind::BatteringRam, 1);
         place(&mut state, 0, 1, PieceKind::Trebuchet, 0);
         place(&mut state, 0, 2, PieceKind::BatteringRam, 0);
         arm_attack(&mut state, 0, TokenKind::Row, 3);
 
         settle_state(&mut state);
+        fire_at_will(&mut state);
         assert_eq!(state.outcome, None);
         assert_eq!(state.siege_engines(1), 1);
     }
@@ -1022,6 +1303,24 @@ mod tests {
         state.token_mut(0, TokenKind::Row).line = 0;
 
         assert_eq!(legal_choices(&state), vec![Choice::Pass]);
+    }
+
+    #[test]
+    fn a_movement_activation_may_always_decline_to_move() {
+        let mut state = empty_board();
+        place(&mut state, 3, 3, PieceKind::Swordsman, 0);
+        state.current_player = 0;
+        state.phase = Phase::Activate;
+        state.pending = [TokenKind::Row, TokenKind::Column];
+        state.pending_len = 1;
+        state.token_mut(0, TokenKind::Row).line = 3;
+
+        let choices = legal_choices(&state);
+        assert!(choices.len() > 1, "the piece has somewhere to go");
+        assert!(
+            choices.contains(&Choice::Pass),
+            "and may still flip the token and take no action"
+        );
     }
 
     #[test]

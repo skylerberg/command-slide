@@ -52,6 +52,22 @@
     </section>
 
     <section>
+      <h3>The ground</h3>
+      <ul>
+        <li>
+          You may stand a piece on your own castle — the trebuchet opens the game doing exactly
+          that — but never on an opponent's. An enemy castle stops a slide dead: a piece may
+          neither enter it nor pass through it.
+        </li>
+        <li>
+          A destroyed castle takes a hilltop token, and the square becomes high ground either side
+          may occupy. Raze a corner castle and a trebuchet standing in its rubble bears on the
+          middle one, three squares along the back rank.
+        </li>
+      </ul>
+    </section>
+
+    <section>
       <h3>A turn</h3>
       <p>
         You own two command tokens. One rides the rank track and one the file track, and each has a
@@ -87,17 +103,26 @@
         </div>
         <div>
           <span><TokenIcon kind="row" face="attack" size={26} /></span>
-          <span>Every piece of yours on that line attacks at once. Attackers do not move.</span>
+          <span>
+            Every piece of yours on that line may attack, <strong>one target each</strong>.
+            Attackers do not move.
+          </span>
         </div>
       </div>
       <p class="aside">
         The token picks which line a piece comes <em>from</em>; the move itself may carry it
-        anywhere a rook or bishop could go. Moves never capture, and never jump.
+        anywhere a rook or bishop could go. Moves never capture, and never jump. You may also flip
+        a token and take no action — with a volley, one attacker at a time.
       </p>
     </section>
 
     <section>
       <h3>Attacks</h3>
+      <p>
+        A volley works along its line, and each piece with something in range picks a single square
+        to hit or holds its fire. Nothing blocks a shot: a spearman strikes over the square in
+        front of it.
+      </p>
       <div class="patterns">
         {#each FIGHTERS as kind (kind)}
           <figure>
@@ -126,7 +151,7 @@
           <span>
             <strong>Trebuchet</strong> — hits castles exactly three squares away, straight or
             diagonal, and only while it stands on a hilltop. From the centre hilltop it bears on
-            every castle on the board.
+            every castle on the board, and brings one of them down a turn.
           </span>
         </li>
         <li>

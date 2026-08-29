@@ -46,10 +46,12 @@ Rust workspace plus a Svelte frontend:
   implemented in TypeScript is a bug.
 - `GameState` is `Copy`: fixed arrays, no `Vec`, so a determinization is a
   memcpy. Keep it that way — the search clones one per iteration.
-- A turn is modelled as three separate decisions (slide, activation order, piece
-  move) rather than one compound choice, to keep the branching factor down.
-  Attack activations carry no decision and are resolved by `settle`, so
-  `Phase::Activate` always has a movement-face token at the head of the queue.
+- A turn is modelled as separate decisions — slide, activation order, piece
+  move, and one target per attacker in a volley — rather than one compound
+  choice, to keep the branching factor down. `settle` runs the game past
+  everything that carries no decision, so `Phase::Activate` always has a
+  movement-face token at the head of the queue; an attack face goes to
+  `Phase::Attack`, which walks the line and stops on each piece with a shot.
 - `apply_with` is generic over an `EventSink` so the search path builds no
   events at all while the UI path gets a full log.
 - The wire format between Rust and TypeScript is pinned by

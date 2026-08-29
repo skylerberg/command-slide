@@ -33,7 +33,7 @@ export function applyChoice(state: GameState, choice: Choice): Applied {
   return JSON.parse(wasm_apply_choice(JSON.stringify(state), JSON.stringify(choice)))
 }
 
-/** What this player's token would destroy if its attack resolved right now. */
+/** What this player's token bears on. Each attacker takes one of these. */
 export function attackPreview(
   state: GameState,
   player: number,

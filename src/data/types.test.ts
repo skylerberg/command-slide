@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { attackTargets, castleSlotAt, isHilltop, squareKey } from './types'
+import type { GameState } from './types'
+
+/** Only the castles matter to the terrain rules under test. */
+function board(castles: boolean[][]): GameState {
+  return { castles } as GameState
+}
 
 describe('attack patterns', () => {
   it('matches the printed diagrams', () => {
@@ -27,12 +33,26 @@ describe('attack patterns', () => {
 })
 
 describe('terrain', () => {
-  it('puts the hilltops on the middle row only', () => {
-    expect(isHilltop({ row: 3, col: 0 })).toBe(true)
-    expect(isHilltop({ row: 3, col: 3 })).toBe(true)
-    expect(isHilltop({ row: 3, col: 6 })).toBe(true)
-    expect(isHilltop({ row: 0, col: 0 })).toBe(false)
-    expect(isHilltop({ row: 3, col: 1 })).toBe(false)
+  it('puts the printed hilltops on the middle row only', () => {
+    const intact = board([
+      [true, true, true],
+      [true, true, true],
+    ])
+    expect(isHilltop(intact, { row: 3, col: 0 })).toBe(true)
+    expect(isHilltop(intact, { row: 3, col: 3 })).toBe(true)
+    expect(isHilltop(intact, { row: 3, col: 6 })).toBe(true)
+    expect(isHilltop(intact, { row: 0, col: 0 })).toBe(false)
+    expect(isHilltop(intact, { row: 3, col: 1 })).toBe(false)
+  })
+
+  it('puts a hilltop token over every razed castle', () => {
+    const razed = board([
+      [false, true, true],
+      [true, true, false],
+    ])
+    expect(isHilltop(razed, { row: 0, col: 0 })).toBe(true)
+    expect(isHilltop(razed, { row: 6, col: 6 })).toBe(true)
+    expect(isHilltop(razed, { row: 0, col: 3 })).toBe(false)
   })
 
   it('finds a castle slot on each back-row corner and middle', () => {

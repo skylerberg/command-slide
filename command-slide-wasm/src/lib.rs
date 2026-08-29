@@ -5,7 +5,7 @@ use command_slide_core::rand_core::SeedableRng;
 use command_slide_core::rules::{apply_logged, attack_preview, GameEvent};
 use command_slide_core::search::{Ai, AiConfig};
 use command_slide_core::types::{Choice, GameState, Square, TokenKind};
-use command_slide_core::{initial_state, legal_choices, AttackResult};
+use command_slide_core::{initial_state, legal_choices, AttackReach};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use wyrand::WyRand;
@@ -38,8 +38,8 @@ struct StateWithEvents {
 #[serde(rename_all = "camelCase")]
 struct AttackPreview {
     attackers: Vec<Square>,
-    destroyed_pieces: Vec<Square>,
-    destroyed_castles: Vec<Square>,
+    threatened_pieces: Vec<Square>,
+    threatened_castles: Vec<Square>,
 }
 
 #[derive(Serialize)]
@@ -68,18 +68,19 @@ pub fn wasm_apply_choice(state_json: &str, choice_json: &str) -> String {
     to_json(&StateWithEvents { state, events })
 }
 
-/// What an attack with this player's token would destroy if it resolved right
-/// now. The UI draws it as a threat overlay.
+/// What an attack with this player's token bears on right now. Each attacker
+/// takes one of these, so it is the volley's reach rather than its casualty
+/// list. The UI draws it as a threat overlay.
 #[wasm_bindgen]
 pub fn wasm_attack_preview(state_json: &str, player: u8, token_json: &str) -> String {
     let state = parse_state(state_json);
     let token: TokenKind = serde_json::from_str(token_json).expect("failed to parse token");
-    let result = attack_preview(&state, player, token);
+    let reach = attack_preview(&state, player, token);
     let enemy = GameState::opponent(player);
     to_json(&AttackPreview {
-        attackers: AttackResult::squares(result.attackers).collect(),
-        destroyed_pieces: AttackResult::squares(result.pieces).collect(),
-        destroyed_castles: result
+        attackers: AttackReach::squares(reach.attackers).collect(),
+        threatened_pieces: AttackReach::squares(reach.pieces).collect(),
+        threatened_castles: reach
             .castles
             .iter()
             .enumerate()

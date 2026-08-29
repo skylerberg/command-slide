@@ -6,9 +6,16 @@
   import RulesOverlay from './RulesOverlay.svelte'
   import { AiController } from '../ai/aiController'
   import { applyChoice, initialState, legalChoices } from '../engine/wasmEngine'
-  import { describeEvent, destroyedSquares, lineName } from '../data/log'
+  import { describeEvent, destroyedSquares, lineName, squareName } from '../data/log'
   import type { LogEntry } from '../data/log'
-  import { PLAYER_NAMES, armedToken, pendingTokens, tokenOf } from '../data/types'
+  import {
+    PIECE_NAMES,
+    PLAYER_NAMES,
+    armedToken,
+    pendingTokens,
+    pieceAt,
+    tokenOf,
+  } from '../data/types'
   import { attackPreview } from '../engine/wasmEngine'
   import type { AttackPreview, Choice, GameState, Square, TokenKind } from '../data/types'
 
@@ -58,6 +65,14 @@
   let choices: Choice[] = $derived(isHumanTurn ? legalChoices(game) : [])
   let mustPass = $derived(choices.length === 1 && choices[0].type === 'pass')
 
+  /** The piece now choosing a target, while a volley walks its line. */
+  let attackerSquare = $derived.by(() => {
+    for (const choice of choices) {
+      if (choice.type === 'attack' || choice.type === 'holdFire') return choice.from
+    }
+    return null
+  })
+
   // When one seat is human the board keeps that side's perspective even while
   // the opponent thinks; a hot-seat game follows whoever is to move.
   let viewer = $derived(humanSeats.length === 1 ? humanSeats[0] : game.currentPlayer)
@@ -72,6 +87,11 @@
   })
 
   let orderChoices = $derived(choices.filter((choice) => choice.type === 'order'))
+
+  function choose(type: 'pass' | 'holdFire') {
+    const choice = choices.find((option) => option.type === type)
+    if (choice) handleChoice(choice)
+  }
 
   function apply(choice: Choice) {
     const result = applyChoice($state.snapshot(game), choice)
@@ -175,6 +195,12 @@
     const kind = pendingTokens(game)[0]
     if (!kind) return ''
     const where = lineName(kind, tokenOf(game, game.currentPlayer, kind).line)
+    if (game.phase === 'attack') {
+      if (!attackerSquare) return ''
+      const piece = pieceAt(game, attackerSquare)
+      const name = piece ? PIECE_NAMES[piece.kind] : 'attacker'
+      return `Volleying along ${where}: your ${name} on ${squareName(attackerSquare)} strikes one target.`
+    }
     if (mustPass) return `No piece on ${where} has a legal move.`
     return kind === 'row'
       ? `Move a piece from ${where} like a rook.`
@@ -267,9 +293,15 @@
                 {/if}
               {/each}
             </div>
-          {:else if isHumanTurn && mustPass}
+          {:else if isHumanTurn && game.phase === 'attack'}
             <div class="actions">
-              <button class="primary" onclick={() => handleChoice(choices[0])}>Pass</button>
+              <button onclick={() => choose('holdFire')}>Hold fire</button>
+            </div>
+          {:else if isHumanTurn && game.phase === 'activate'}
+            <div class="actions">
+              <button class:primary={mustPass} onclick={() => choose('pass')}>
+                {mustPass ? 'Pass' : 'Take no action'}
+              </button>
             </div>
           {/if}
         {/if}
@@ -279,8 +311,8 @@
       </div>
 
       <div class="legend small-caps">
-        <span><i class="key own"></i> your volley</span>
-        <span><i class="key threat"></i> incoming volley</span>
+        <span><i class="key own"></i> your volley's reach</span>
+        <span><i class="key threat"></i> incoming volley's reach</span>
         <span><i class="key movable"></i> can move</span>
         <span><i class="key dest"></i> destination</span>
       </div>
