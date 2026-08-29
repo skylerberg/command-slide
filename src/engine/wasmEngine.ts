@@ -4,10 +4,10 @@
 import init, {
   wasm_apply_choice,
   wasm_attack_preview,
+  wasm_forced_order,
   wasm_initial_state,
   wasm_legal_choices,
   wasm_move_outcomes,
-  wasm_order_matters,
   wasm_pending_attackers,
   wasm_slide_outcomes,
 } from '../wasm-pkg/command_slide_wasm.js'
@@ -57,9 +57,9 @@ export function attackPreview(
   )
 }
 
-/** Whether the player's two activations can reach different positions. */
-export function orderMatters(state: GameState): boolean {
-  return wasm_order_matters(JSON.stringify(state))
+/** The activation order to take for the player, or null to put it to them. */
+export function forcedOrder(state: GameState): TokenKind | null {
+  return JSON.parse(wasm_forced_order(JSON.stringify(state)))
 }
 
 /** Every move in the current activation, with what it puts in reach. */

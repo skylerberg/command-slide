@@ -8,10 +8,10 @@
   import {
     applyChoice,
     attackPreview,
+    forcedOrder,
     initialState,
     legalChoices,
     moveOutcomes,
-    orderMatters,
     pendingAttackers,
     slideOutcomes,
   } from '../engine/wasmEngine'
@@ -162,11 +162,12 @@
         apply(options[0])
         continue
       }
-      if (position.phase !== 'order' || orderMatters(position)) return
-      // Both orders reach the same positions. Firing first is the legible one:
-      // the volley is over and done with before the player is asked to move.
-      const armed = armedToken(position, position.currentPlayer) ?? 'row'
-      apply({ type: 'order', first: armed })
+      if (position.phase !== 'order') return
+      // The engine settles the order whenever one of them gives up nothing;
+      // only a fork the player could answer either way reaches them.
+      const first = forcedOrder(position)
+      if (!first) return
+      apply({ type: 'order', first })
     }
   }
 
@@ -242,15 +243,17 @@
   }
 
   /** What choosing this order puts in front of the volley, so the choice reads
-      without counting squares. */
+      without counting squares. The question is only ever put when the volley
+      has a shot to take, so there is always something to count. */
   function orderNote(kind: TokenKind): string {
     if (tokenOf(game, game.currentPlayer, kind).face !== 'attack') {
       return 'the volley waits for the piece to land'
     }
     const preview = volley[game.currentPlayer]
     const targets =
-      (preview?.threatenedPieces.length ?? 0) + (preview?.threatenedCastles.length ?? 0)
-    if (targets === 0) return 'nothing is in reach of it yet'
+      (preview?.threatenedPieces.length ?? 0) +
+      (preview?.threatenedCastles.length ?? 0) +
+      (preview?.threatenedWalls.length ?? 0)
     return `${targets} ${targets === 1 ? 'target' : 'targets'} in reach now`
   }
 
