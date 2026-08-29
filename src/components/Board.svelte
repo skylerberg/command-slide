@@ -53,6 +53,22 @@
 
   let moves = $derived(legalChoices.filter((choice) => choice.type === 'move'))
 
+  /** The one piece now choosing a target, while a volley walks its line. */
+  let attacker = $derived.by(() => {
+    for (const choice of legalChoices) {
+      if (choice.type === 'attack' || choice.type === 'holdFire') return choice.from
+    }
+    return null
+  })
+
+  let targets = $derived(
+    new Set(
+      legalChoices
+        .filter((choice) => choice.type === 'attack')
+        .map((choice) => squareKey(choice.target)),
+    ),
+  )
+
   let movable = $derived(new Set(moves.map((choice) => squareKey(choice.from))))
 
   let destinations = $derived(
@@ -71,7 +87,7 @@
     if (!square) return new Set<string>()
     const piece = pieceAt(game, square)
     if (!piece) return new Set<string>()
-    if (piece.kind === 'trebuchet' && !isHilltop(square)) return new Set<string>()
+    if (piece.kind === 'trebuchet' && !isHilltop(game, square)) return new Set<string>()
     return new Set(attackTargets(square, piece.kind).map(squareKey))
   })
 
@@ -79,11 +95,13 @@
     const preview = volley[player]
     if (!preview) return new Set()
     return new Set(
-      [...preview.destroyedPieces, ...preview.destroyedCastles].map(squareKey),
+      [...preview.threatenedPieces, ...preview.threatenedCastles].map(squareKey),
     )
   }
 
-  let ownMarks = $derived(viewer === null ? new Set<string>() : markedSquares(viewer))
+  let ownMarks = $derived(
+    viewer === null || attacker !== null ? new Set<string>() : markedSquares(viewer),
+  )
   let threatMarks = $derived(
     !showThreats || viewer === null ? new Set<string>() : markedSquares(1 - viewer),
   )
@@ -120,6 +138,10 @@
   }
 
   function clickSquare(square: Square) {
+    if (attacker && targets.has(squareKey(square))) {
+      onChoice({ type: 'attack', from: attacker, target: square })
+      return
+    }
     if (selected && destinations.has(squareKey(square))) {
       onChoice({ type: 'move', from: selected, to: square })
       return
@@ -143,9 +165,9 @@
     const piece = pieceAt(game, square)
     const parts: string[] = [`${'abcdefg'[square.col]}${BOARD_SIZE - square.row}`]
     if (piece) parts.push(piece.kind)
-    if (isHilltop(square)) parts.push('hilltop')
     const slot = castleSlotAt(square)
-    if (slot) parts.push(game.castles[slot.owner][slot.index] ? 'castle' : 'ruined castle')
+    if (slot) parts.push(game.castles[slot.owner][slot.index] ? 'castle' : 'razed castle')
+    if (isHilltop(game, square)) parts.push('hilltop')
     return parts.join(' · ')
   }
 </script>
@@ -200,11 +222,13 @@
           class={`square ${bandClass(square)}`}
           class:castle-square={slot !== null && game.castles[slot.owner][slot.index]}
           class:castle-razed={slot !== null && !game.castles[slot.owner][slot.index]}
-          class:hilltop={isHilltop(square)}
+          class:hilltop={isHilltop(game, square)}
           class:armed-siege={piece !== null &&
             piece.kind === 'trebuchet' &&
-            isHilltop(square)}
+            isHilltop(game, square)}
           class:selected={selected !== null && sameSquare(selected, square)}
+          class:firing={attacker !== null && sameSquare(attacker, square)}
+          class:target={targets.has(key)}
           class:movable={movable.has(key)}
           class:destination={destinations.has(key)}
           class:pattern={patternSquares.has(key)}
@@ -219,14 +243,9 @@
           title={squareTitle(square)}
         >
           <span class="terrain">
-            {#if slot}
-              <span class={game.castles[slot.owner][slot.index] ? 'castle' : 'ruin'}>
-                <TerrainIcon
-                  kind={game.castles[slot.owner][slot.index] ? 'castle' : 'ruin'}
-                  size={40}
-                />
-              </span>
-            {:else if isHilltop(square)}
+            {#if slot && game.castles[slot.owner][slot.index]}
+              <span class="castle"><TerrainIcon kind="castle" size={40} /></span>
+            {:else if isHilltop(game, square)}
               <span class="hill"><TerrainIcon kind="hilltop" size={34} /></span>
             {/if}
           </span>
@@ -402,16 +421,15 @@
     box-shadow: inset 0 0 0 2px rgba(122, 90, 51, 0.45);
   }
 
-  .square.castle-razed {
-    background: repeating-linear-gradient(
-      45deg,
-      rgba(122, 90, 51, 0.1) 0 4px,
-      transparent 4px 8px
-    );
-  }
-
   .square.hilltop {
     background: var(--hilltop);
+  }
+
+  /* A razed castle takes a hilltop token; the hatch keeps what it was legible. */
+  .square.castle-razed {
+    background:
+      repeating-linear-gradient(45deg, rgba(122, 90, 51, 0.16) 0 4px, transparent 4px 8px),
+      var(--hilltop);
   }
 
   .terrain {
@@ -425,11 +443,6 @@
   .castle {
     color: var(--ink);
     opacity: 0.55;
-  }
-
-  .ruin {
-    color: var(--ink-faint);
-    opacity: 0.6;
   }
 
   .hill {
@@ -470,6 +483,25 @@
     background: rgba(208, 115, 26, 0.12);
   }
 
+  /* The attacker now choosing its one target. */
+  .square.firing .overlay {
+    box-shadow: inset 0 0 0 3px var(--amber);
+    background: rgba(208, 115, 26, 0.12);
+  }
+
+  .square.target {
+    cursor: pointer;
+  }
+
+  .square.target .overlay {
+    box-shadow: inset 0 0 0 3px var(--crimson);
+    background: rgba(163, 34, 34, 0.22);
+  }
+
+  .square.target:hover .overlay {
+    background: rgba(163, 34, 34, 0.38);
+  }
+
   .square.destination {
     cursor: pointer;
   }
@@ -491,7 +523,7 @@
     box-shadow: inset 0 0 0 2px rgba(163, 34, 34, 0.45);
   }
 
-  /* Something your armed token would destroy right now. */
+  /* Something your armed token bears on. */
   .square.own-mark .overlay::before {
     content: '';
     position: absolute;
@@ -501,7 +533,7 @@
     background: rgba(185, 143, 46, 0.2);
   }
 
-  /* Something the opponent's armed token would destroy right now. */
+  /* Something the opponent's armed token bears on. */
   .square.threat .overlay::before {
     content: '';
     position: absolute;

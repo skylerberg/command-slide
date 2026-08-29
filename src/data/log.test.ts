@@ -16,37 +16,50 @@ describe('board coordinates', () => {
 })
 
 describe('describeEvent', () => {
-  it('lists every casualty of a volley', () => {
+  it('announces a volley by the line it comes from', () => {
+    const event: GameEvent = { type: 'volley', player: 1, token: 'column', line: 3 }
+    expect(describeEvent(event)).toEqual({ player: 1, text: 'volleys along file d' })
+  })
+
+  it('names the attacker and its one casualty', () => {
     const event: GameEvent = {
-      type: 'attacked',
+      type: 'struck',
       player: 1,
       token: 'column',
-      line: 3,
-      attackers: [{ row: 3, col: 3 }],
-      destroyedPieces: [[{ row: 2, col: 3 }, { kind: 'archer', owner: 0 }]],
-      destroyedCastles: [
-        { row: 0, col: 0 },
-        { row: 0, col: 3 },
-      ],
+      kind: 'archer',
+      from: { row: 3, col: 3 },
+      target: { row: 1, col: 1 },
+      casualty: { type: 'piece', piece: { kind: 'flail', owner: 0 } },
     }
     expect(describeEvent(event)).toEqual({
       player: 1,
-      text: 'volleys along file d, destroying Archer on d5, the castle on a7, the castle on d7',
+      text: 'Archer d4 destroys Flail on b6',
       grave: true,
     })
   })
 
-  it('says so when a volley hits nothing', () => {
+  it('names a razed castle by its square', () => {
     const event: GameEvent = {
-      type: 'attacked',
+      type: 'struck',
       player: 0,
       token: 'row',
-      line: 6,
-      attackers: [],
-      destroyedPieces: [],
-      destroyedCastles: [],
+      kind: 'trebuchet',
+      from: { row: 3, col: 3 },
+      target: { row: 6, col: 0 },
+      casualty: { type: 'castle' },
     }
-    expect(describeEvent(event)?.text).toBe('volleys along rank 1 — no casualties')
+    expect(describeEvent(event)?.text).toBe('Trebuchet d4 destroys the castle on a1')
+  })
+
+  it('records an attacker that declined its shot', () => {
+    const event: GameEvent = {
+      type: 'heldFire',
+      player: 0,
+      token: 'row',
+      kind: 'swordsman',
+      from: { row: 3, col: 3 },
+    }
+    expect(describeEvent(event)?.text).toBe('Swordsman d4 holds its fire')
   })
 
   it('leaves the game-over line unattributed so it is not prefixed twice', () => {
@@ -63,17 +76,27 @@ describe('describeEvent', () => {
 })
 
 describe('destroyedSquares', () => {
-  it('collects pieces and castles from every volley in a batch', () => {
+  it('collects the target of every shot in a batch', () => {
     const events: GameEvent[] = [
       { type: 'slid', player: 0, token: 'row', from: 0, to: 2 },
+      { type: 'volley', player: 0, token: 'row', line: 2 },
       {
-        type: 'attacked',
+        type: 'struck',
         player: 0,
         token: 'row',
-        line: 2,
-        attackers: [],
-        destroyedPieces: [[{ row: 1, col: 1 }, { kind: 'flail', owner: 1 }]],
-        destroyedCastles: [{ row: 6, col: 6 }],
+        kind: 'swordsman',
+        from: { row: 2, col: 1 },
+        target: { row: 1, col: 1 },
+        casualty: { type: 'piece', piece: { kind: 'flail', owner: 1 } },
+      },
+      {
+        type: 'struck',
+        player: 0,
+        token: 'row',
+        kind: 'batteringRam',
+        from: { row: 5, col: 6 },
+        target: { row: 6, col: 6 },
+        casualty: { type: 'castle' },
       },
     ]
     expect(destroyedSquares(events)).toEqual([

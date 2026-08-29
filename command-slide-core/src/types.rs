@@ -168,8 +168,7 @@ pub struct Token {
     pub face: TokenFace,
 }
 
-/// Where a turn is. Attack activations never appear here: they carry no
-/// decision, so they are resolved on the way to the next real choice.
+/// Where a turn is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Phase {
@@ -177,8 +176,11 @@ pub enum Phase {
     Slide,
     /// Choose which of the two tokens activates first.
     Order,
-    /// Activate the token at the head of the queue.
+    /// Spend the movement face at the head of the queue.
     Activate,
+    /// Aim one attacker of a volley. Each piece on the line fires in turn, so
+    /// an attack face costs as many decisions as it has pieces with a shot.
+    Attack,
     GameOver,
 }
 
@@ -192,8 +194,13 @@ pub enum Choice {
     Order { first: TokenKind },
     /// Spend a movement activation moving a piece.
     Move { from: Square, to: Square },
-    /// Spend a movement activation with no legal move available.
+    /// Spend a movement activation without moving.
     Pass,
+    /// Fire the attacker on `from` at `target`. A piece commanded to attack
+    /// strikes one square, not everything its pattern covers.
+    Attack { from: Square, target: Square },
+    /// Leave the attacker on `from` unfired and move on down the line.
+    HoldFire { from: Square },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -219,6 +226,10 @@ pub struct GameState {
     /// `pending_len` entries are meaningful.
     pub pending: [TokenKind; 2],
     pub pending_len: u8,
+    /// Under `Phase::Attack`, how far along the token's line the volley has
+    /// got: the index of the piece now choosing its target. Meaningless in
+    /// every other phase.
+    pub attack_index: u8,
     /// Full turns taken by both sides so far.
     pub turn: u32,
     pub outcome: Option<Outcome>,
@@ -253,14 +264,48 @@ impl GameState {
     /// The squares of `line`, which is a row for a `Row` token and a column for
     /// a `Column` token.
     pub fn line_squares(kind: TokenKind, line: u8) -> impl Iterator<Item = Square> {
-        (0..BOARD_SIZE as u8).map(move |i| match kind {
-            TokenKind::Row => Square::new(line, i),
-            TokenKind::Column => Square::new(i, line),
-        })
+        (0..BOARD_SIZE as u8).map(move |index| Self::line_square(kind, line, index))
     }
 
-    pub fn is_hilltop(square: Square) -> bool {
+    /// The `index`th square of `line`, counting along the line.
+    pub fn line_square(kind: TokenKind, line: u8, index: u8) -> Square {
+        match kind {
+            TokenKind::Row => Square::new(line, index),
+            TokenKind::Column => Square::new(index, line),
+        }
+    }
+
+    /// One of the three hilltops printed on the board.
+    pub fn is_natural_hilltop(square: Square) -> bool {
         square.row == HILLTOP_ROW && HILLTOP_COLS.contains(&square.col)
+    }
+
+    /// A hilltop as the board stands: one of the printed three, or a castle
+    /// that has been destroyed and taken a hilltop token in its place.
+    pub fn is_hilltop(&self, square: Square) -> bool {
+        Self::is_natural_hilltop(square) || self.razed_castle_at(square)
+    }
+
+    fn razed_castle_at(&self, square: Square) -> bool {
+        matches!(
+            Self::castle_slot_at(square),
+            Some((owner, index)) if !self.castles[owner as usize][index]
+        )
+    }
+
+    /// Who owns the castle still standing on `square`, if one does.
+    pub fn standing_castle_at(&self, square: Square) -> Option<u8> {
+        match Self::castle_slot_at(square) {
+            Some((owner, index)) if self.castles[owner as usize][index] => Some(owner),
+            _ => None,
+        }
+    }
+
+    /// Whether a standing enemy castle sits on `square`. A piece may neither
+    /// enter one nor slide through it.
+    pub fn blocks_slide(&self, square: Square, player: u8) -> bool {
+        self.standing_castle_at(square)
+            .is_some_and(|owner| owner != player)
     }
 
     /// The castle slot `square` belongs to, if any, as `(owner, index)`.

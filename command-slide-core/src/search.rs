@@ -33,8 +33,12 @@ pub struct EvalParams {
     /// A trebuchet standing on a hilltop is a live siege weapon; off one it is
     /// an expensive spectator.
     pub hilltop: f64,
-    /// Per enemy castle a hilltop trebuchet currently bears on.
+    /// The first enemy castle a hilltop trebuchet bears on.
     pub castle_threat: f64,
+    /// Per enemy castle in range beyond the first. A volley fires one shot per
+    /// piece, so the second and third castle a trebuchet covers are options,
+    /// not extra damage — they are worth far less than the first.
+    pub castle_threat_extra: f64,
     /// Per enemy castle a battering ram currently bears on.
     pub ram_threat: f64,
     /// Per square of distance from a trebuchet to the nearest hilltop.
@@ -60,6 +64,7 @@ impl Default for EvalParams {
             archer: 2.4,
             hilltop: 4.0,
             castle_threat: 2.5,
+            castle_threat_extra: 0.8,
             ram_threat: 3.0,
             trebuchet_approach: 0.6,
             ram_approach: 0.5,
@@ -84,7 +89,7 @@ impl EvalParams {
 
 /// Standing enemy castles a piece of `kind` on `from` would hit right now.
 pub fn castles_in_range(state: &GameState, from: Square, enemy: u8, kind: PieceKind) -> usize {
-    if kind == PieceKind::Trebuchet && !GameState::is_hilltop(from) {
+    if kind == PieceKind::Trebuchet && !state.is_hilltop(from) {
         return 0;
     }
     kind.attack_offsets()
@@ -95,10 +100,19 @@ pub fn castles_in_range(state: &GameState, from: Square, enemy: u8, kind: PieceK
         .count()
 }
 
-fn distance_to_hilltop(from: Square) -> u8 {
-    HILLTOP_COLS
+/// A razed castle takes a hilltop token, so the set a trebuchet is walking
+/// towards grows as castles fall.
+fn distance_to_hilltop(state: &GameState, from: Square) -> u8 {
+    let printed = HILLTOP_COLS
         .iter()
-        .map(|&col| from.chebyshev(Square::new(HILLTOP_ROW, col)))
+        .map(|&col| from.chebyshev(Square::new(HILLTOP_ROW, col)));
+    let razed = (0..NUM_PLAYERS as u8).flat_map(move |owner| {
+        (0..CASTLES_PER_PLAYER)
+            .filter(move |&index| !state.castles[owner as usize][index])
+            .map(move |index| from.chebyshev(GameState::castle_square(owner, index)))
+    });
+    printed
+        .chain(razed)
         .min()
         .expect("the board has hilltops")
 }
@@ -123,12 +137,15 @@ pub fn side_score(state: &GameState, player: u8, params: &EvalParams) -> f64 {
         match piece.kind {
             PieceKind::Trebuchet => {
                 siege_engines += 1;
-                if GameState::is_hilltop(square) {
-                    score += params.hilltop
-                        + params.castle_threat
-                            * castles_in_range(state, square, enemy, piece.kind) as f64;
+                if state.is_hilltop(square) {
+                    score += params.hilltop;
+                    let threatened = castles_in_range(state, square, enemy, piece.kind);
+                    if threatened > 0 {
+                        score += params.castle_threat
+                            + params.castle_threat_extra * (threatened - 1) as f64;
+                    }
                 } else {
-                    score -= params.trebuchet_approach * distance_to_hilltop(square) as f64;
+                    score -= params.trebuchet_approach * distance_to_hilltop(state, square) as f64;
                 }
             }
             PieceKind::BatteringRam => {

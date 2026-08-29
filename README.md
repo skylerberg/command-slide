@@ -79,7 +79,7 @@ thinking for the strength.
 
 ```sh
 cargo test                                    # 26 engine tests
-pnpm test                                      # 12 frontend tests
+pnpm test                                      # 15 frontend tests
 pnpm run check                                 # svelte-check
 
 pnpm run run-games -- bench                    # search throughput
@@ -101,9 +101,10 @@ that it is doing real work.
 ## A note on the game
 
 Games are short. Under equal search both sides reach a verdict in seven or eight
-turns, and a trebuchet that reaches the centre hilltop unanswered razes all
-three enemy castles in a single volley. That is faithful to the rules rather than
-a quirk of the implementation: castles and hilltops share files, so the centre
-hilltop is exactly three squares from every castle on the board. The counterplay
-is the telegraph — a token is slid a full turn before it fires, so an approach
-can be seen and answered.
+turns, and most of them end by eliminating a side's siege engines rather than by
+razing castles — a piece strikes one target per volley, so three castles take at
+least three turns to bring down, while two siege engines can be picked off much
+sooner. The trebuchet is still what both sides play around: castles and hilltops
+share files, so from the centre hilltop it bears on every castle on the board
+and takes one a turn. The counterplay is the telegraph — a token is slid a full
+turn before it fires, so an approach can be seen and answered.

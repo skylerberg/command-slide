@@ -38,24 +38,29 @@ export function describeEvent(event: GameEvent): LogEntry | null {
     case 'passed':
       return {
         player: event.player,
-        text: `has no move for the ${tokenName(event.token)} token`,
+        text: `takes no action with the ${tokenName(event.token)} token`,
       }
-    case 'attacked': {
-      const kills = event.destroyedPieces.map(
-        ([square, piece]) => `${PIECE_NAMES[piece.kind]} on ${squareName(square)}`,
-      )
-      const razed = event.destroyedCastles.map((square) => `the castle on ${squareName(square)}`)
-      const casualties = [...kills, ...razed]
-      const where = lineName(event.token, event.line)
-      if (casualties.length === 0) {
-        return { player: event.player, text: `volleys along ${where} — no casualties` }
-      }
+    case 'volley':
       return {
         player: event.player,
-        text: `volleys along ${where}, destroying ${casualties.join(', ')}`,
+        text: `volleys along ${lineName(event.token, event.line)}`,
+      }
+    case 'struck': {
+      const victim =
+        event.casualty.type === 'castle'
+          ? `the castle on ${squareName(event.target)}`
+          : `${PIECE_NAMES[event.casualty.piece.kind]} on ${squareName(event.target)}`
+      return {
+        player: event.player,
+        text: `${PIECE_NAMES[event.kind]} ${squareName(event.from)} destroys ${victim}`,
         grave: true,
       }
     }
+    case 'heldFire':
+      return {
+        player: event.player,
+        text: `${PIECE_NAMES[event.kind]} ${squareName(event.from)} holds its fire`,
+      }
     case 'gameOver':
       // No speaker prefix: the sentence already names the winner.
       return {
@@ -73,11 +78,5 @@ export function describeEvent(event: GameEvent): LogEntry | null {
 
 /** Squares emptied by these events, for the strike flash on the board. */
 export function destroyedSquares(events: GameEvent[]): Square[] {
-  const squares: Square[] = []
-  for (const event of events) {
-    if (event.type !== 'attacked') continue
-    for (const [square] of event.destroyedPieces) squares.push(square)
-    for (const square of event.destroyedCastles) squares.push(square)
-  }
-  return squares
+  return events.filter((event) => event.type === 'struck').map((event) => event.target)
 }

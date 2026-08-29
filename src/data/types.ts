@@ -34,13 +34,18 @@ export interface Token {
   face: TokenFace
 }
 
-export type Phase = 'slide' | 'order' | 'activate' | 'gameOver'
+export type Phase = 'slide' | 'order' | 'activate' | 'attack' | 'gameOver'
 
 export type Choice =
   | { type: 'slide'; token: TokenKind; line: number }
   | { type: 'order'; first: TokenKind }
   | { type: 'move'; from: Square; to: Square }
   | { type: 'pass' }
+  | { type: 'attack'; from: Square; target: Square }
+  | { type: 'holdFire'; from: Square }
+
+/** What one shot destroyed. A shot destroys exactly one thing. */
+export type Casualty = { type: 'piece'; piece: Piece } | { type: 'castle' }
 
 export type Outcome = { type: 'winner'; player: number } | { type: 'draw' }
 
@@ -53,6 +58,8 @@ export interface GameState {
   phase: Phase
   pending: TokenKind[]
   pendingLen: number
+  /** How far along its line a volley has got. Only meaningful in `attack`. */
+  attackIndex: number
   turn: number
   outcome: Outcome | null
 }
@@ -68,23 +75,31 @@ export type GameEvent =
       to: Square
     }
   | { type: 'passed'; player: number; token: TokenKind }
+  | { type: 'volley'; player: number; token: TokenKind; line: number }
   | {
-      type: 'attacked'
+      type: 'struck'
       player: number
       token: TokenKind
-      line: number
-      attackers: Square[]
-      /** Each entry is a `[square, piece]` pair, as Rust serializes a tuple. */
-      destroyedPieces: [Square, Piece][]
-      destroyedCastles: Square[]
+      kind: PieceKind
+      from: Square
+      target: Square
+      casualty: Casualty
+    }
+  | {
+      type: 'heldFire'
+      player: number
+      token: TokenKind
+      kind: PieceKind
+      from: Square
     }
   | { type: 'turnEnded'; player: number }
   | { type: 'gameOver'; outcome: Outcome }
 
+/** A volley's reach: each attacker takes one of these, not all of them. */
 export interface AttackPreview {
   attackers: Square[]
-  destroyedPieces: Square[]
-  destroyedCastles: Square[]
+  threatenedPieces: Square[]
+  threatenedCastles: Square[]
 }
 
 export const TOKEN_KINDS: TokenKind[] = ['row', 'column']
@@ -127,8 +142,11 @@ export function armedToken(state: GameState, player: number): TokenKind | null {
   return TOKEN_KINDS.find((kind) => tokenOf(state, player, kind).face === 'attack') ?? null
 }
 
-export function isHilltop(square: Square): boolean {
-  return square.row === HILLTOP_ROW && HILLTOP_COLS.includes(square.col)
+/** One of the printed three, or a razed castle with a hilltop token over it. */
+export function isHilltop(state: GameState, square: Square): boolean {
+  if (square.row === HILLTOP_ROW && HILLTOP_COLS.includes(square.col)) return true
+  const slot = castleSlotAt(square)
+  return slot !== null && !state.castles[slot.owner][slot.index]
 }
 
 /** The castle slot on `square`, whether or not that castle still stands. */
