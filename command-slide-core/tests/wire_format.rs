@@ -4,6 +4,7 @@
 
 use command_slide_core::rules::{apply_logged, GameEvent};
 use command_slide_core::types::*;
+use command_slide_core::preview::{move_outcomes, slide_outcomes};
 use command_slide_core::{initial_state, settle_state};
 use serde_json::{json, Value};
 
@@ -247,4 +248,71 @@ fn outcomes_are_tagged() {
         serde_json::to_value(Outcome::Draw).unwrap(),
         json!({ "type": "draw" }),
     );
+}
+
+#[test]
+fn preview_shapes_use_the_keys_the_board_draws_from() {
+    let mut state = initial_state();
+    state.board = [[None; BOARD_SIZE]; BOARD_SIZE];
+    for (row, col, kind, owner) in [
+        (0, 1, PieceKind::Swordsman, 0),
+        (1, 3, PieceKind::Swordsman, 1),
+        (5, 5, PieceKind::Trebuchet, 0),
+        (5, 4, PieceKind::BatteringRam, 0),
+        (6, 6, PieceKind::Trebuchet, 1),
+        (6, 5, PieceKind::BatteringRam, 1),
+    ] {
+        state.set_piece(Square::new(row, col), Some(Piece { kind, owner }));
+    }
+    *state.token_mut(0, TokenKind::Row) = Token {
+        line: 1,
+        face: TokenFace::Attack,
+    };
+    *state.token_mut(0, TokenKind::Column) = Token {
+        line: 1,
+        face: TokenFace::Movement,
+    };
+
+    let mut activating = state;
+    activating.pending = [TokenKind::Column, TokenKind::Row];
+    activating.pending_len = 2;
+    activating.phase = Phase::Activate;
+
+    let moves = serde_json::to_value(move_outcomes(&activating)).unwrap();
+    let onto_the_rank = moves
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|value| field(value, "to") == json!({ "row": 1, "col": 2 }))
+        .expect("the swordsman can step onto the armed rank");
+    assert_eq!(field(onto_the_rank, "from"), json!({ "row": 0, "col": 1 }));
+    assert_eq!(
+        field(onto_the_rank, "threatenedPieces"),
+        json!([{ "row": 1, "col": 3 }]),
+    );
+    assert_eq!(field(onto_the_rank, "threatenedCastles"), json!([]));
+
+    let mut sliding = state;
+    sliding.phase = Phase::Slide;
+    *sliding.token_mut(0, TokenKind::Column) = Token {
+        line: 6,
+        face: TokenFace::Movement,
+    };
+    *sliding.token_mut(0, TokenKind::Row) = Token {
+        line: 1,
+        face: TokenFace::Attack,
+    };
+
+    let slides = serde_json::to_value(slide_outcomes(&sliding)).unwrap();
+    let onto_file_b = slides
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|value| field(value, "line") == json!(1))
+        .expect("file b holds a piece to move");
+    assert_eq!(field(onto_file_b, "token"), json!("column"));
+    assert_eq!(field(onto_file_b, "movers"), json!([{ "row": 0, "col": 1 }]));
+    for key in ["covered", "threatenedPieces", "threatenedCastles"] {
+        assert!(onto_file_b.get(key).is_some(), "SlideOutcome is missing {key}");
+    }
 }

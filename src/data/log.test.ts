@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { describeEvent, destroyedSquares, lineName, squareName } from './log'
-import type { GameEvent } from './types'
+import {
+  describeEvent,
+  describeMoveOutcome,
+  describeSlideOutcome,
+  destroyedSquares,
+  lineName,
+  squareName,
+} from './log'
+import { BOARD_SIZE } from './types'
+import type { GameEvent, GameState, PieceKind, Square } from './types'
 
 describe('board coordinates', () => {
   it('names squares with files left to right and ranks top to bottom', () => {
@@ -103,5 +111,97 @@ describe('destroyedSquares', () => {
       { row: 1, col: 1 },
       { row: 6, col: 6 },
     ])
+  })
+})
+
+/** A board with nothing on it but the pieces a test names. */
+function position(pieces: [Square, PieceKind, number][]): GameState {
+  const board = Array.from({ length: BOARD_SIZE }, () =>
+    Array.from({ length: BOARD_SIZE }, () => null),
+  ) as GameState['board']
+  for (const [square, kind, owner] of pieces) board[square.row][square.col] = { kind, owner }
+  return {
+    board,
+    castles: [
+      [true, true, true],
+      [true, true, true],
+    ],
+    tokens: [
+      [
+        { line: 0, face: 'movement' },
+        { line: 0, face: 'attack' },
+      ],
+      [
+        { line: 6, face: 'movement' },
+        { line: 6, face: 'attack' },
+      ],
+    ],
+    currentPlayer: 0,
+    phase: 'activate',
+    pending: ['row', 'column'],
+    pendingLen: 2,
+    attackIndex: 0,
+    turn: 3,
+    outcome: null,
+  }
+}
+
+describe('describeMoveOutcome', () => {
+  const state = position([[{ row: 1, col: 3 }, 'swordsman', 1]])
+
+  it('names what the volley after the move would take', () => {
+    expect(
+      describeMoveOutcome(state, {
+        from: { row: 0, col: 1 },
+        to: { row: 1, col: 2 },
+        threatenedPieces: [{ row: 1, col: 3 }],
+        threatenedCastles: [{ row: 6, col: 0 }],
+      }),
+    ).toBe('b7 → c6, and your volley then bears on Swordsman d6 and the castle on a1.')
+  })
+
+  it('says only where the piece goes when nothing follows', () => {
+    expect(
+      describeMoveOutcome(state, {
+        from: { row: 0, col: 1 },
+        to: { row: 1, col: 0 },
+        threatenedPieces: [],
+        threatenedCastles: [],
+      }),
+    ).toBe('b7 → a6.')
+  })
+})
+
+describe('describeSlideOutcome', () => {
+  const state = position([[{ row: 2, col: 3 }, 'archer', 1]])
+
+  it('reports both halves of a slide: the move now and the volley next turn', () => {
+    expect(
+      describeSlideOutcome(state, {
+        token: 'row',
+        line: 2,
+        movers: [{ row: 2, col: 1 }],
+        covered: [{ row: 2, col: 3 }],
+        threatenedPieces: [{ row: 2, col: 3 }],
+        threatenedCastles: [],
+      }),
+    ).toBe(
+      '1 piece on rank 5 could move; next turn the volley there bears on Archer d5, as the board stands.',
+    )
+  })
+
+  it('says plainly when a line offers neither', () => {
+    expect(
+      describeSlideOutcome(state, {
+        token: 'column',
+        line: 5,
+        movers: [],
+        covered: [],
+        threatenedPieces: [],
+        threatenedCastles: [],
+      }),
+    ).toBe(
+      'Nothing on file f could move; next turn the volley there bears on nothing, as the board stands.',
+    )
   })
 })

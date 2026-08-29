@@ -2,6 +2,7 @@
 //! side never has to mirror a Rust memory layout.
 
 use command_slide_core::rand_core::SeedableRng;
+use command_slide_core::preview::{move_outcomes, order_matters, pending_attackers, slide_outcomes};
 use command_slide_core::rules::{apply_logged, attack_preview, GameEvent};
 use command_slide_core::search::{Ai, AiConfig};
 use command_slide_core::types::{Choice, GameState, Square, TokenKind};
@@ -38,6 +39,7 @@ struct StateWithEvents {
 #[serde(rename_all = "camelCase")]
 struct AttackPreview {
     attackers: Vec<Square>,
+    covered: Vec<Square>,
     threatened_pieces: Vec<Square>,
     threatened_castles: Vec<Square>,
 }
@@ -79,6 +81,7 @@ pub fn wasm_attack_preview(state_json: &str, player: u8, token_json: &str) -> St
     let enemy = GameState::opponent(player);
     to_json(&AttackPreview {
         attackers: AttackReach::squares(reach.attackers).collect(),
+        covered: AttackReach::squares(reach.covered).collect(),
         threatened_pieces: AttackReach::squares(reach.pieces).collect(),
         threatened_castles: reach
             .castles
@@ -88,6 +91,34 @@ pub fn wasm_attack_preview(state_json: &str, player: u8, token_json: &str) -> St
             .map(|(index, _)| GameState::castle_square(enemy, index))
             .collect(),
     })
+}
+
+/// Whether the player's two activations can reach different positions. The
+/// interface asks before putting the order to them, and takes it itself when
+/// the answer is no.
+#[wasm_bindgen]
+pub fn wasm_order_matters(state_json: &str) -> bool {
+    order_matters(&parse_state(state_json))
+}
+
+/// Every move in the current activation, paired with what it puts within reach
+/// of the volley still to come.
+#[wasm_bindgen]
+pub fn wasm_move_outcomes(state_json: &str) -> String {
+    to_json(&move_outcomes(&parse_state(state_json)))
+}
+
+/// Every slide available, paired with the pieces it would free to move and the
+/// squares it would arm for next turn.
+#[wasm_bindgen]
+pub fn wasm_slide_outcomes(state_json: &str) -> String {
+    to_json(&slide_outcomes(&parse_state(state_json)))
+}
+
+/// The attackers of the volley in progress that have still to fire.
+#[wasm_bindgen]
+pub fn wasm_pending_attackers(state_json: &str) -> String {
+    to_json(&pending_attackers(&parse_state(state_json)))
 }
 
 /// One search for the single decision in front of the player.

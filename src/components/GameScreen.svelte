@@ -5,7 +5,16 @@
   import PlayerPanel from './PlayerPanel.svelte'
   import RulesOverlay from './RulesOverlay.svelte'
   import { AiController } from '../ai/aiController'
-  import { applyChoice, initialState, legalChoices } from '../engine/wasmEngine'
+  import {
+    applyChoice,
+    attackPreview,
+    initialState,
+    legalChoices,
+    moveOutcomes,
+    orderMatters,
+    pendingAttackers,
+    slideOutcomes,
+  } from '../engine/wasmEngine'
   import { describeEvent, destroyedSquares, lineName, squareName } from '../data/log'
   import type { LogEntry } from '../data/log'
   import {
@@ -15,9 +24,17 @@
     pendingTokens,
     pieceAt,
     tokenOf,
+    volleyPending,
   } from '../data/types'
-  import { attackPreview } from '../engine/wasmEngine'
-  import type { AttackPreview, Choice, GameState, Square, TokenKind } from '../data/types'
+  import type {
+    AttackPreview,
+    Choice,
+    GameState,
+    MoveOutcome,
+    SlideOutcome,
+    Square,
+    TokenKind,
+  } from '../data/types'
 
   export interface GameSetup {
     seats: ('human' | 'ai')[]
@@ -50,6 +67,9 @@
   let failure: string | null = $state(null)
   let showRules = $state(false)
   let showThreats = $state(true)
+  let showOutcomes = $state(true)
+  /** A sentence about whatever is under the cursor on the board. */
+  let hint: string | null = $state(null)
 
   const ai = new AiController()
   /** Bumped whenever the position the AI is searching stops being current. */
@@ -88,12 +108,23 @@
 
   let orderChoices = $derived(choices.filter((choice) => choice.type === 'order'))
 
+  let outcomes: MoveOutcome[] = $derived(
+    isHumanTurn && game.phase === 'activate' ? moveOutcomes($state.snapshot(game)) : [],
+  )
+  let slides: SlideOutcome[] = $derived(
+    isHumanTurn && game.phase === 'slide' ? slideOutcomes($state.snapshot(game)) : [],
+  )
+  let attackers: Square[] = $derived(
+    game.phase === 'attack' ? pendingAttackers($state.snapshot(game)) : [],
+  )
+
   function choose(type: 'pass' | 'holdFire') {
     const choice = choices.find((option) => option.type === type)
     if (choice) handleChoice(choice)
   }
 
   function apply(choice: Choice) {
+    hint = null
     const result = applyChoice($state.snapshot(game), choice)
     game = result.state
     for (const event of result.events) {
@@ -112,6 +143,35 @@
     if (!isHumanTurn) return
     history = [...history, { game: $state.snapshot(game), entries: [...entries] }]
     apply(choice)
+    advance()
+  }
+
+  /** Play out every decision that has only one possible outcome, so the player
+      is only ever asked something they could answer more than one way. Nothing
+      taken here reaches the undo stack: undo steps back to a real decision. */
+  function autoResolve() {
+    // A turn is a handful of decisions and a hot-seat game hands straight over.
+    // The bound is only here so that a bug cannot freeze the tab.
+    for (let step = 0; step < 64; step++) {
+      if (game.outcome || thinking) return
+      if (setup.seats[game.currentPlayer] !== 'human') return
+
+      const position = $state.snapshot(game)
+      const options = legalChoices(position)
+      if (options.length === 1) {
+        apply(options[0])
+        continue
+      }
+      if (position.phase !== 'order' || orderMatters(position)) return
+      // Both orders reach the same positions. Firing first is the legible one:
+      // the volley is over and done with before the player is asked to move.
+      const armed = armedToken(position, position.currentPlayer) ?? 'row'
+      apply({ type: 'order', first: armed })
+    }
+  }
+
+  function advance() {
+    autoResolve()
     driveAi()
   }
 
@@ -140,7 +200,7 @@
       if (gen === generation) thinking = false
     }
     // Two machines playing each other hand the turn straight back.
-    if (gen === generation) driveAi()
+    if (gen === generation) advance()
   }
 
   function undo() {
@@ -150,6 +210,7 @@
     ai.cancel()
     thinking = false
     destroyed = []
+    hint = null
     game = previous.game
     entries = previous.entries
     history = history.slice(0, -1)
@@ -160,11 +221,12 @@
     ai.cancel()
     thinking = false
     destroyed = []
+    hint = null
     entries = []
     history = []
     failure = null
     game = initialState()
-    driveAi()
+    advance()
   }
 
   function tokenWord(kind: TokenKind): string {
@@ -179,6 +241,19 @@
       : `Move from ${where} first`
   }
 
+  /** What choosing this order puts in front of the volley, so the choice reads
+      without counting squares. */
+  function orderNote(kind: TokenKind): string {
+    if (tokenOf(game, game.currentPlayer, kind).face !== 'attack') {
+      return 'the volley waits for the piece to land'
+    }
+    const preview = volley[game.currentPlayer]
+    const targets =
+      (preview?.threatenedPieces.length ?? 0) + (preview?.threatenedCastles.length ?? 0)
+    if (targets === 0) return 'nothing is in reach of it yet'
+    return `${targets} ${targets === 1 ? 'target' : 'targets'} in reach now`
+  }
+
   let prompt = $derived.by(() => {
     if (game.outcome) return ''
     if (!isHumanTurn) return `${PLAYER_NAMES[game.currentPlayer]} is deliberating…`
@@ -191,7 +266,7 @@
         ? 'Opening move: slide either command token to a line holding one of your pieces.'
         : `Slide your ${unique[0]} token to a ${unique[0]} holding one of your pieces.`
     }
-    if (game.phase === 'order') return 'Activate your tokens — you choose the order.'
+    if (game.phase === 'order') return 'Both activations are ready — which fires first?'
     const kind = pendingTokens(game)[0]
     if (!kind) return ''
     const where = lineName(kind, tokenOf(game, game.currentPlayer, kind).line)
@@ -205,6 +280,29 @@
     return kind === 'row'
       ? `Move a piece from ${where} like a rook.`
       : `Move a piece from ${where} like a bishop.`
+  })
+
+  /** The standing sentence under the prompt: what this decision is really
+      deciding. The board replaces it while something is under the cursor. */
+  let guidance = $derived.by(() => {
+    if (game.outcome || !isHumanTurn) return ''
+    if (game.phase === 'slide') {
+      return 'The line you choose is also where this token volleys next turn.'
+    }
+    if (game.phase === 'order') {
+      return 'A volley counts only the pieces standing on its line the moment it fires.'
+    }
+    if (game.phase === 'attack') {
+      const left = attackers.length - 1
+      return left > 0
+        ? `${left} more ${left === 1 ? 'attacker fires' : 'attackers fire'} after this one.`
+        : 'The last shot of this volley.'
+    }
+    if (mustPass) return 'The activation passes; your volley still fires.'
+    if (!volleyPending(game)) return 'The volley has fired; this move ends the turn.'
+    const armed = pendingTokens(game)[1]
+    const where = lineName(armed, tokenOf(game, game.currentPlayer, armed).line)
+    return `Your volley along ${where} fires the moment the piece lands.`
   })
 
   let verdict = $derived.by(() => {
@@ -221,7 +319,7 @@
 
   // Only the opening move needs a kick; every turn after is driven from
   // `handleChoice` or from `runAi` itself.
-  onMount(driveAi)
+  onMount(advance)
   onDestroy(() => ai.dispose())
 </script>
 
@@ -235,6 +333,10 @@
       <label class="toggle">
         <input type="checkbox" bind:checked={showThreats} />
         Show threats
+      </label>
+      <label class="toggle">
+        <input type="checkbox" bind:checked={showOutcomes} />
+        Look ahead
       </label>
       <button onclick={() => (showRules = true)}>Rules</button>
       <button onclick={undo} disabled={history.length === 0}>Undo</button>
@@ -267,10 +369,15 @@
         {game}
         legalChoices={choices}
         {volley}
+        moveOutcomes={outcomes}
+        slideOutcomes={slides}
+        pendingAttackers={attackers}
         {viewer}
         {showThreats}
+        {showOutcomes}
         {destroyed}
         onChoice={handleChoice}
+        onhint={(text) => (hint = text)}
       />
 
       <div class="prompt panel">
@@ -281,15 +388,26 @@
             <button onclick={onexit}>Menu</button>
           </div>
         {:else}
+          {#if isHumanTurn}
+            <ol class="steps small-caps">
+              <li class:done={game.phase !== 'slide'} class:now={game.phase === 'slide'}>
+                Slide a token
+              </li>
+              <li class:now={game.phase !== 'slide'}>Activate both</li>
+            </ol>
+          {/if}
           <span class="line">{prompt}</span>
+          {#if hint || guidance}
+            <span class="guidance" class:live={hint !== null}>{hint ?? guidance}</span>
+          {/if}
           {#if isHumanTurn && game.phase === 'order'}
             <div class="actions">
               {#each orderChoices as choice (choice.type === 'order' ? choice.first : '')}
                 {#if choice.type === 'order'}
-                  <button
-                    class="primary"
-                    onclick={() => handleChoice(choice)}
-                  >{orderLabel(choice.first)}</button>
+                  <button class="primary order" onclick={() => handleChoice(choice)}>
+                    <span>{orderLabel(choice.first)}</span>
+                    <span class="note">{orderNote(choice.first)}</span>
+                  </button>
                 {/if}
               {/each}
             </div>
@@ -311,10 +429,13 @@
       </div>
 
       <div class="legend small-caps">
-        <span><i class="key own"></i> your volley's reach</span>
-        <span><i class="key threat"></i> incoming volley's reach</span>
+        <span><i class="key own"></i> you can shoot</span>
+        <span><i class="key own-reach"></i> you cover</span>
+        <span><i class="key threat"></i> they can shoot</span>
+        <span><i class="key threat-reach"></i> they cover</span>
         <span><i class="key movable"></i> can move</span>
         <span><i class="key dest"></i> destination</span>
+        <span><i class="key kill"></i> puts a target in reach</span>
       </div>
     </main>
   </div>
@@ -402,6 +523,54 @@
     font-size: 1.02rem;
   }
 
+  .steps {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    font-size: 0.72rem;
+    color: var(--ink-faint);
+    list-style: none;
+  }
+
+  .steps li + li::before {
+    content: '→';
+    margin-right: 0.5rem;
+  }
+
+  .steps li.done {
+    text-decoration: line-through;
+  }
+
+  .steps li.now {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .guidance {
+    font-size: 0.86rem;
+    color: var(--ink-soft);
+    font-style: italic;
+    min-height: 1.2em;
+  }
+
+  .guidance.live {
+    color: var(--crimson);
+    font-style: normal;
+  }
+
+  .order {
+    display: grid;
+    gap: 0.15rem;
+    justify-items: center;
+    line-height: 1.25;
+  }
+
+  .order .note {
+    font-size: 0.74rem;
+    opacity: 0.75;
+    font-weight: 400;
+  }
+
   .verdict {
     font-family: var(--font-display);
     font-size: 1.1rem;
@@ -450,8 +619,32 @@
     background: rgba(163, 34, 34, 0.22);
   }
 
+  .key.own-reach {
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(185, 143, 46, 0.55) 0 2px,
+      transparent 2px 6px
+    );
+    border: 1px solid var(--gold-soft);
+  }
+
+  .key.threat-reach {
+    background: repeating-linear-gradient(
+      45deg,
+      rgba(163, 34, 34, 0.5) 0 2px,
+      transparent 2px 6px
+    );
+    border: 1px solid rgba(163, 34, 34, 0.4);
+  }
+
   .key.movable {
     box-shadow: inset 0 0 0 2px var(--gold);
+  }
+
+  .key.kill {
+    border-radius: 50%;
+    background: var(--crimson);
+    opacity: 0.7;
   }
 
   .key.dest {
