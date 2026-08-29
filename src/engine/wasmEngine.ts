@@ -6,8 +6,21 @@ import init, {
   wasm_attack_preview,
   wasm_initial_state,
   wasm_legal_choices,
+  wasm_move_outcomes,
+  wasm_order_matters,
+  wasm_pending_attackers,
+  wasm_slide_outcomes,
 } from '../wasm-pkg/command_slide_wasm.js'
-import type { AttackPreview, Choice, GameEvent, GameState, TokenKind } from '../data/types'
+import type {
+  AttackPreview,
+  Choice,
+  GameEvent,
+  GameState,
+  MoveOutcome,
+  SlideOutcome,
+  Square,
+  TokenKind,
+} from '../data/types'
 
 let ready: Promise<unknown> | null = null
 
@@ -42,4 +55,24 @@ export function attackPreview(
   return JSON.parse(
     wasm_attack_preview(JSON.stringify(state), player, JSON.stringify(token)),
   )
+}
+
+/** Whether the player's two activations can reach different positions. */
+export function orderMatters(state: GameState): boolean {
+  return wasm_order_matters(JSON.stringify(state))
+}
+
+/** Every move in the current activation, with what it puts in reach. */
+export function moveOutcomes(state: GameState): MoveOutcome[] {
+  return JSON.parse(wasm_move_outcomes(JSON.stringify(state)))
+}
+
+/** Every slide available, with what it frees to move and what it arms. */
+export function slideOutcomes(state: GameState): SlideOutcome[] {
+  return JSON.parse(wasm_slide_outcomes(JSON.stringify(state)))
+}
+
+/** The attackers of the volley in progress that have still to fire. */
+export function pendingAttackers(state: GameState): Square[] {
+  return JSON.parse(wasm_pending_attackers(JSON.stringify(state)))
 }

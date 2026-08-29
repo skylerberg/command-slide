@@ -98,6 +98,26 @@ export type GameEvent =
 /** A volley's reach: each attacker takes one of these, not all of them. */
 export interface AttackPreview {
   attackers: Square[]
+  /** Every square this volley could shoot a piece on, occupied or not. */
+  covered: Square[]
+  threatenedPieces: Square[]
+  threatenedCastles: Square[]
+}
+
+/** What one move puts within reach of the volley still to come this turn. */
+export interface MoveOutcome {
+  from: Square
+  to: Square
+  threatenedPieces: Square[]
+  threatenedCastles: Square[]
+}
+
+/** What sliding a token to a line sets up, now and next turn. */
+export interface SlideOutcome {
+  token: TokenKind
+  line: number
+  movers: Square[]
+  covered: Square[]
   threatenedPieces: Square[]
   threatenedCastles: Square[]
 }
@@ -135,6 +155,13 @@ export function pieceAt(state: GameState, square: Square): Piece | null {
 /** Tokens still waiting to activate this turn, in the order they will act. */
 export function pendingTokens(state: GameState): TokenKind[] {
   return state.pending.slice(0, state.pendingLen)
+}
+
+/** Whether a volley is still waiting to fire in this player's turn. */
+export function volleyPending(state: GameState): boolean {
+  return pendingTokens(state).some(
+    (kind) => tokenOf(state, state.currentPlayer, kind).face === 'attack',
+  )
 }
 
 /** The single token this player will attack with, if one is armed. */

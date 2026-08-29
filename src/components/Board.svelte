@@ -2,18 +2,28 @@
   import PieceIcon from './PieceIcon.svelte'
   import TerrainIcon from './TerrainIcon.svelte'
   import TokenIcon from './TokenIcon.svelte'
+  import { describeMoveOutcome, describeSlideOutcome } from '../data/log'
   import {
     BOARD_SIZE,
     TOKEN_KINDS,
     attackTargets,
     castleSlotAt,
     isHilltop,
+    lineOf,
     pieceAt,
     sameSquare,
     squareKey,
     tokenOf,
   } from '../data/types'
-  import type { AttackPreview, Choice, GameState, Square, TokenKind } from '../data/types'
+  import type {
+    AttackPreview,
+    Choice,
+    GameState,
+    MoveOutcome,
+    SlideOutcome,
+    Square,
+    TokenKind,
+  } from '../data/types'
 
   interface Props {
     game: GameState
@@ -21,37 +31,62 @@
     legalChoices: Choice[]
     /** Squares each side's armed token currently bears on. */
     volley: Record<number, AttackPreview | null>
+    /** What each move available now puts in reach; empty off the move phase. */
+    moveOutcomes: MoveOutcome[]
+    /** What each slide available now sets up; empty off the slide phase. */
+    slideOutcomes: SlideOutcome[]
+    /** Attackers of the volley in progress still to fire, the current one first. */
+    pendingAttackers: Square[]
     /** The seat the human is playing, or null when watching. */
     viewer: number | null
     showThreats: boolean
+    /** Whether to look a step ahead: what a move or a slide would lead to. */
+    showOutcomes: boolean
     /** Squares emptied by the volley just resolved, flashed and then dropped. */
     destroyed: Square[]
     onChoice: (choice: Choice) => void
+    /** A sentence about whatever is under the cursor, for the prompt panel. */
+    onhint: (hint: string | null) => void
   }
 
-  let { game, legalChoices, volley, viewer, showThreats, destroyed, onChoice }: Props = $props()
+  let {
+    game,
+    legalChoices,
+    volley,
+    moveOutcomes,
+    slideOutcomes,
+    pendingAttackers,
+    viewer,
+    showThreats,
+    showOutcomes,
+    destroyed,
+    onChoice,
+    onhint,
+  }: Props = $props()
 
   let selected: Square | null = $state(null)
   let hovered: Square | null = $state(null)
-
-  // A choice landed, so any half-finished selection is about a position that
-  // no longer exists.
-  $effect(() => {
-    void game
-    selected = null
-  })
+  let hoveredSlide: SlideOutcome | null = $state(null)
 
   const indices = Array.from({ length: BOARD_SIZE }, (_, i) => i)
 
-  let slideTargets = $derived(
-    new Set(
-      legalChoices
-        .filter((choice) => choice.type === 'slide')
-        .map((choice) => `${choice.token}:${choice.line}`),
-    ),
-  )
-
   let moves = $derived(legalChoices.filter((choice) => choice.type === 'move'))
+
+  let movable = $derived(new Set(moves.map((choice) => squareKey(choice.from))))
+
+  // A choice landed, so any half-finished selection is about a position that no
+  // longer exists. When one piece is the only one that can move there is
+  // nothing to pick: select it so its destinations are already on the board.
+  $effect(() => {
+    void game
+    selected = movable.size === 1 ? moves[0].from : null
+    hovered = null
+    hoveredSlide = null
+  })
+
+  let slideTargets = $derived(
+    new Map(slideOutcomes.map((outcome) => [`${outcome.token}:${outcome.line}`, outcome])),
+  )
 
   /** The one piece now choosing a target, while a volley walks its line. */
   let attacker = $derived.by(() => {
@@ -69,8 +104,6 @@
     ),
   )
 
-  let movable = $derived(new Set(moves.map((choice) => squareKey(choice.from))))
-
   let destinations = $derived(
     selected === null
       ? new Set<string>()
@@ -81,31 +114,80 @@
         ),
   )
 
-  /** Where the highlighted piece would strike, shown while learning a pattern. */
-  let patternSquares = $derived.by(() => {
-    const square = selected ?? hovered
-    if (!square) return new Set<string>()
-    const piece = pieceAt(game, square)
-    if (!piece) return new Set<string>()
-    if (piece.kind === 'trebuchet' && !isHilltop(game, square)) return new Set<string>()
-    return new Set(attackTargets(square, piece.kind).map(squareKey))
-  })
-
-  function markedSquares(player: number): Set<string> {
-    const preview = volley[player]
-    if (!preview) return new Set()
-    return new Set(
-      [...preview.threatenedPieces, ...preview.threatenedCastles].map(squareKey),
-    )
+  function targeting(outcome: MoveOutcome): boolean {
+    return outcome.threatenedPieces.length > 0 || outcome.threatenedCastles.length > 0
   }
 
-  let ownMarks = $derived(
-    viewer === null || attacker !== null ? new Set<string>() : markedSquares(viewer),
+  /** The move to each destination of the selected piece, keyed by destination. */
+  let outcomeByDestination = $derived.by(() => {
+    const map = new Map<string, MoveOutcome>()
+    if (!selected) return map
+    for (const outcome of moveOutcomes) {
+      if (sameSquare(outcome.from, selected)) map.set(squareKey(outcome.to), outcome)
+    }
+    return map
+  })
+
+  /** Pieces holding a move that would put something under the volley. */
+  let armingMovers = $derived(
+    new Set(
+      showOutcomes ? moveOutcomes.filter(targeting).map((o) => squareKey(o.from)) : [],
+    ),
   )
-  let threatMarks = $derived(
-    !showThreats || viewer === null ? new Set<string>() : markedSquares(1 - viewer),
-  )
-  let destroyedKeys = $derived(new Set(destroyed.map(squareKey)))
+
+  /** What the destination under the cursor would bring within reach. */
+  let inReach = $derived.by(() => {
+    if (!showOutcomes || !hovered) return new Set<string>()
+    const outcome = outcomeByDestination.get(squareKey(hovered))
+    if (!outcome) return new Set<string>()
+    return new Set([...outcome.threatenedPieces, ...outcome.threatenedCastles].map(squareKey))
+  })
+
+  /** Where the highlighted piece strikes — from where it would land, if the
+      cursor is on one of its destinations. */
+  let patternSquares = $derived.by(() => {
+    const landing = hovered && destinations.has(squareKey(hovered)) ? hovered : null
+    const origin = landing ?? selected ?? hovered
+    if (!origin) return new Set<string>()
+    const piece = pieceAt(game, landing ? selected! : origin)
+    if (!piece) return new Set<string>()
+    if (piece.kind === 'trebuchet' && !isHilltop(game, origin)) return new Set<string>()
+    return new Set(attackTargets(origin, piece.kind).map(squareKey))
+  })
+
+  function keys(squares: Square[]): Set<string> {
+    return new Set(squares.map(squareKey))
+  }
+
+  /** The volley the board is explaining: the armed token's, or the one a
+      hovered slide would arm a turn from now. Suppressed while an attacker is
+      choosing its target, where the legal shots say it better. */
+  let ownVolley = $derived.by(() => {
+    if (hoveredSlide && showOutcomes) {
+      return {
+        covered: keys(hoveredSlide.covered),
+        marks: keys([...hoveredSlide.threatenedPieces, ...hoveredSlide.threatenedCastles]),
+      }
+    }
+    const preview = viewer === null || attacker !== null ? null : volley[viewer]
+    return {
+      covered: keys(preview?.covered ?? []),
+      marks: keys([...(preview?.threatenedPieces ?? []), ...(preview?.threatenedCastles ?? [])]),
+    }
+  })
+
+  let enemyVolley = $derived.by(() => {
+    const preview = !showThreats || viewer === null ? null : volley[1 - viewer]
+    return {
+      covered: keys(preview?.covered ?? []),
+      marks: keys([...(preview?.threatenedPieces ?? []), ...(preview?.threatenedCastles ?? [])]),
+    }
+  })
+
+  /** Attackers behind the one now firing: the shots still to come. */
+  let queuedAttackers = $derived(keys(pendingAttackers.slice(1)))
+  let previewMovers = $derived.by(() => keys(hoveredSlide?.movers ?? []))
+  let destroyedKeys = $derived(keys(destroyed))
 
   /** Lines each side's tokens currently name, for the faint band under them. */
   let bands = $derived.by(() => {
@@ -122,19 +204,50 @@
     return { rows, cols }
   })
 
+  /** An armed line reads by whose it is: the one you are about to be shot
+      along is not the one you are about to shoot along. */
   function bandClass(square: Square): string {
     const labels = [
       ...(bands.rows.get(square.row) ?? []),
       ...(bands.cols.get(square.col) ?? []),
     ]
-    if (labels.some((label) => label.endsWith('attack'))) return 'band-attack'
+    const mine = viewer ?? 0
+    if (labels.includes(`${1 - mine}-attack`)) return 'band-threat'
+    if (labels.includes(`${mine}-attack`)) return 'band-armed'
     if (labels.length > 0) return 'band-move'
     return ''
+  }
+
+  function onPreviewedLine(square: Square): boolean {
+    return hoveredSlide !== null && lineOf(hoveredSlide.token, square) === hoveredSlide.line
   }
 
   function clickTrack(kind: TokenKind, line: number) {
     if (!slideTargets.has(`${kind}:${line}`)) return
     onChoice({ type: 'slide', token: kind, line })
+  }
+
+  function enterTrack(kind: TokenKind, line: number) {
+    const outcome = slideTargets.get(`${kind}:${line}`)
+    if (!outcome) return
+    hoveredSlide = outcome
+    onhint(showOutcomes ? describeSlideOutcome(game, outcome) : null)
+  }
+
+  function leaveTrack() {
+    hoveredSlide = null
+    onhint(null)
+  }
+
+  function enterSquare(square: Square) {
+    hovered = square
+    const outcome = outcomeByDestination.get(squareKey(square))
+    onhint(outcome && showOutcomes ? describeMoveOutcome(game, outcome) : null)
+  }
+
+  function leaveSquare() {
+    hovered = null
+    onhint(null)
   }
 
   function clickSquare(square: Square) {
@@ -172,6 +285,12 @@
   }
 </script>
 
+<svelte:window
+  onkeydown={(event) => {
+    if (event.key === 'Escape') selected = null
+  }}
+/>
+
 <div class="board-frame">
   <div class="grid">
     <div class="corner"></div>
@@ -182,6 +301,10 @@
         class:occupied={trackHasToken(0, 'column', col)}
         disabled={!trackActive(0, 'column', col)}
         onclick={() => clickTrack('column', col)}
+        onmouseenter={() => enterTrack('column', col)}
+        onmouseleave={leaveTrack}
+        onfocus={() => enterTrack('column', col)}
+        onblur={leaveTrack}
         aria-label={`Ivory column token to column ${col + 1}`}
       >
         {#if trackHasToken(0, 'column', col)}
@@ -202,6 +325,10 @@
         class:occupied={trackHasToken(0, 'row', row)}
         disabled={!trackActive(0, 'row', row)}
         onclick={() => clickTrack('row', row)}
+        onmouseenter={() => enterTrack('row', row)}
+        onmouseleave={leaveTrack}
+        onfocus={() => enterTrack('row', row)}
+        onblur={leaveTrack}
         aria-label={`Ivory row token to row ${row + 1}`}
       >
         {#if trackHasToken(0, 'row', row)}
@@ -218,6 +345,7 @@
         {@const key = squareKey(square)}
         {@const piece = pieceAt(game, square)}
         {@const slot = castleSlotAt(square)}
+        {@const outcome = outcomeByDestination.get(key)}
         <button
           class={`square ${bandClass(square)}`}
           class:castle-square={slot !== null && game.castles[slot.owner][slot.index]}
@@ -226,20 +354,28 @@
           class:armed-siege={piece !== null &&
             piece.kind === 'trebuchet' &&
             isHilltop(game, square)}
+          class:line-preview={onPreviewedLine(square)}
+          class:preview-mover={previewMovers.has(key)}
           class:selected={selected !== null && sameSquare(selected, square)}
           class:firing={attacker !== null && sameSquare(attacker, square)}
+          class:queued={queuedAttackers.has(key)}
           class:target={targets.has(key)}
           class:movable={movable.has(key)}
+          class:arming={armingMovers.has(key)}
           class:destination={destinations.has(key)}
+          class:aims={showOutcomes && outcome !== undefined && targeting(outcome)}
           class:pattern={patternSquares.has(key)}
-          class:own-mark={ownMarks.has(key)}
-          class:threat={threatMarks.has(key)}
+          class:covered-own={ownVolley.covered.has(key)}
+          class:covered-threat={enemyVolley.covered.has(key)}
+          class:own-mark={ownVolley.marks.has(key)}
+          class:threat={enemyVolley.marks.has(key)}
+          class:in-reach={inReach.has(key)}
           class:flash={destroyedKeys.has(key)}
           onclick={() => clickSquare(square)}
-          onmouseenter={() => (hovered = square)}
-          onmouseleave={() => (hovered = null)}
-          onfocus={() => (hovered = square)}
-          onblur={() => (hovered = null)}
+          onmouseenter={() => enterSquare(square)}
+          onmouseleave={leaveSquare}
+          onfocus={() => enterSquare(square)}
+          onblur={leaveSquare}
           title={squareTitle(square)}
         >
           <span class="terrain">
@@ -266,6 +402,10 @@
         class:occupied={trackHasToken(1, 'row', row)}
         disabled={!trackActive(1, 'row', row)}
         onclick={() => clickTrack('row', row)}
+        onmouseenter={() => enterTrack('row', row)}
+        onmouseleave={leaveTrack}
+        onfocus={() => enterTrack('row', row)}
+        onblur={leaveTrack}
         aria-label={`Umber row token to row ${row + 1}`}
       >
         {#if trackHasToken(1, 'row', row)}
@@ -286,6 +426,10 @@
         class:occupied={trackHasToken(1, 'column', col)}
         disabled={!trackActive(1, 'column', col)}
         onclick={() => clickTrack('column', col)}
+        onmouseenter={() => enterTrack('column', col)}
+        onmouseleave={leaveTrack}
+        onfocus={() => enterTrack('column', col)}
+        onblur={leaveTrack}
         aria-label={`Umber column token to column ${col + 1}`}
       >
         {#if trackHasToken(1, 'column', col)}
@@ -410,8 +554,12 @@
     background: rgba(43, 110, 168, 0.13);
   }
 
-  .square.band-attack {
-    background: rgba(163, 34, 34, 0.14);
+  .square.band-armed {
+    background: rgba(185, 143, 46, 0.16);
+  }
+
+  .square.band-threat {
+    background: rgba(163, 34, 34, 0.13);
   }
 
   /* Castle squares stay legible under a piece: the terrain tint carries them
@@ -423,6 +571,12 @@
 
   .square.hilltop {
     background: var(--hilltop);
+  }
+
+  /* The line a hovered slide destination would name. Amber is the colour of
+     the thing you are about to pick, as it is for a selected piece. */
+  .square.line-preview {
+    background: rgba(208, 115, 26, 0.2);
   }
 
   /* A razed castle takes a hilltop token; the hatch keeps what it was legible. */
@@ -469,9 +623,38 @@
     pointer-events: none;
   }
 
+  /* Where a volley lands, whether or not anything is standing there. Gold is
+     yours, crimson theirs; a square in both hatches is a trade. */
+  .square.covered-own .overlay {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      rgba(185, 143, 46, 0.28) 0 2px,
+      transparent 2px 7px
+    );
+  }
+
+  .square.covered-threat .overlay {
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(163, 34, 34, 0.26) 0 2px,
+      transparent 2px 7px
+    );
+  }
+
+  .square.covered-own.covered-threat .overlay {
+    background-image:
+      repeating-linear-gradient(-45deg, rgba(185, 143, 46, 0.28) 0 2px, transparent 2px 7px),
+      repeating-linear-gradient(45deg, rgba(163, 34, 34, 0.26) 0 2px, transparent 2px 7px);
+  }
+
   /* A piece this activation could move. */
   .square.movable {
     cursor: pointer;
+  }
+
+  /* Pieces on the line a hovered slide would name. */
+  .square.preview-mover .overlay {
+    box-shadow: inset 0 0 0 2px var(--gold);
   }
 
   .square.movable .overlay {
@@ -480,13 +663,31 @@
 
   .square.selected .overlay {
     box-shadow: inset 0 0 0 3px var(--amber);
-    background: rgba(208, 115, 26, 0.12);
+    background-color: rgba(208, 115, 26, 0.12);
+  }
+
+  /* A piece holding a move that would put something under the volley. */
+  .square.arming .overlay::after {
+    content: '';
+    position: absolute;
+    top: 6%;
+    right: 6%;
+    width: 22%;
+    height: 22%;
+    border-radius: 50%;
+    background: var(--crimson);
+    opacity: 0.75;
   }
 
   /* The attacker now choosing its one target. */
   .square.firing .overlay {
     box-shadow: inset 0 0 0 3px var(--amber);
-    background: rgba(208, 115, 26, 0.12);
+    background-color: rgba(208, 115, 26, 0.12);
+  }
+
+  /* Attackers behind it: this volley still has their shots to take. */
+  .square.queued .overlay {
+    box-shadow: inset 0 0 0 2px rgba(208, 115, 26, 0.45);
   }
 
   .square.target {
@@ -495,11 +696,11 @@
 
   .square.target .overlay {
     box-shadow: inset 0 0 0 3px var(--crimson);
-    background: rgba(163, 34, 34, 0.22);
+    background-color: rgba(163, 34, 34, 0.22);
   }
 
   .square.target:hover .overlay {
-    background: rgba(163, 34, 34, 0.38);
+    background-color: rgba(163, 34, 34, 0.38);
   }
 
   .square.destination {
@@ -516,6 +717,15 @@
     border-radius: 50%;
     background: var(--azure);
     opacity: 0.55;
+  }
+
+  /* A destination that would bring something under the volley. */
+  .square.destination.aims .overlay::after {
+    width: 38%;
+    height: 38%;
+    background: var(--crimson);
+    opacity: 0.7;
+    box-shadow: 0 0 0 3px rgba(163, 34, 34, 0.25);
   }
 
   /* Where the piece under the cursor would strike. */
@@ -543,23 +753,38 @@
     background: rgba(163, 34, 34, 0.22);
   }
 
+  /* What the destination under the cursor would put in reach. Last, so it
+     wins over the softer marks it sits on top of. */
+  .square.in-reach .overlay {
+    box-shadow: inset 0 0 0 3px var(--crimson);
+  }
+
+  .square.in-reach .overlay::before {
+    content: '';
+    position: absolute;
+    inset: 6%;
+    border: 2px solid var(--crimson);
+    border-radius: 3px;
+    background: rgba(163, 34, 34, 0.35);
+  }
+
   .square.flash .overlay {
     animation: strike 0.7s ease-out;
   }
 
   @keyframes strike {
     0% {
-      background: rgba(163, 34, 34, 0.75);
+      background-color: rgba(163, 34, 34, 0.75);
     }
     100% {
-      background: transparent;
+      background-color: transparent;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .square.flash .overlay {
       animation: none;
-      background: rgba(163, 34, 34, 0.25);
+      background-color: rgba(163, 34, 34, 0.25);
     }
   }
 </style>

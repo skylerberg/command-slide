@@ -242,6 +242,17 @@ fn strikes(state: &GameState, from: Square, piece: Piece) -> impl Iterator<Item 
         })
 }
 
+/// Every on-board square a piece's pattern reaches, whoever is standing there.
+/// [`strikes`] narrows this to the squares that hold a legal target; the board
+/// wants the wider set to show where a move would not survive.
+fn covered_squares(state: &GameState, from: Square, piece: Piece) -> impl Iterator<Item = Square> {
+    let blind = piece.kind == PieceKind::Trebuchet && !state.is_hilltop(from);
+    let offsets: &'static [(i8, i8)] = if blind { &[] } else { piece.kind.attack_offsets() };
+    offsets
+        .iter()
+        .filter_map(move |&(drow, dcol)| from.offset(drow, dcol))
+}
+
 /// The next piece of the current player's on `kind`'s line, at or after index
 /// `from`, with a shot to take. Pieces with nothing to fire at are skipped:
 /// they carry no decision, so the volley never stops on them.
@@ -333,6 +344,12 @@ pub fn legal_choices(state: &GameState) -> Vec<Choice> {
 pub struct AttackReach {
     /// Friendly pieces in the line with a shot to take, as a square bitboard.
     pub attackers: u64,
+    /// Every square this line's pieces could shoot an enemy standing on,
+    /// occupied or not. An attacker with nothing to fire at today is still
+    /// counted: walking into its pattern is what gives it a target. Siege
+    /// engines add nothing — they break castles and leave what stands on one
+    /// alone.
+    pub covered: u64,
     /// Enemy pieces under threat, as a square bitboard.
     pub pieces: u64,
     /// Enemy castles under threat, indexed by slot.
@@ -361,6 +378,11 @@ pub fn attack_preview(state: &GameState, player: u8, kind: TokenKind) -> AttackR
         };
         if piece.owner != player {
             continue;
+        }
+        if !piece.kind.is_siege() {
+            for target in covered_squares(state, square, piece) {
+                reach.covered |= 1 << target.index();
+            }
         }
         for target in strikes(state, square, piece) {
             reach.attackers |= 1 << square.index();
@@ -438,6 +460,11 @@ fn end_turn(state: &mut GameState, sink: &mut impl EventSink) {
     sink.emit(|| GameEvent::TurnEnded { player });
     state.current_player = GameState::opponent(player);
     state.pending_len = 0;
+    // Reset rather than leave the drained queue and the volley's cursor
+    // behind: two turns that reached the same board by different activation
+    // orders are the same position, and stale fields would say otherwise.
+    state.pending = [TokenKind::Row, TokenKind::Column];
+    state.attack_index = 0;
     state.phase = Phase::Slide;
     if state.current_player == 0 {
         state.turn += 1;

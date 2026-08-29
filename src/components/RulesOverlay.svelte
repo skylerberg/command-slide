@@ -160,6 +160,27 @@
         </li>
       </ul>
     </section>
+
+    <section>
+      <h3>Reading the board</h3>
+      <ul class="marks">
+        <li><i class="key own"></i> a piece or castle your armed token has a shot at</li>
+        <li><i class="key own-reach"></i> every square that line covers, occupied or not</li>
+        <li><i class="key threat"></i> what the opponent's armed token has a shot at</li>
+        <li><i class="key threat-reach"></i> the squares it covers — move into one and it has a
+          shot at you</li>
+        <li><i class="key movable"></i> a piece this activation may move</li>
+        <li><i class="key dest"></i> somewhere it may go</li>
+        <li><i class="key kill"></i> a destination that would put a target under your volley</li>
+      </ul>
+      <p class="aside">
+        Each attacker takes one shot, so a line covering four things still only takes as many as
+        it has pieces to fire. Hover a slide target or a destination and the line under the board
+        says what it leads to; both sets of hints have a switch in the top bar. Decisions that
+        cannot change the position — a forced pass, a lone slide, an activation order that leads
+        to the same board either way — are taken for you and recorded in the dispatches.
+      </p>
+    </section>
   </div>
 </div>
 
@@ -200,6 +221,70 @@
 
   h2 {
     font-size: 1.5rem;
+  }
+
+  .marks {
+    display: grid;
+    gap: 0.35rem;
+    list-style: none;
+    padding: 0;
+  }
+
+  .marks li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .key {
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+    flex: none;
+  }
+
+  .key.own {
+    border: 2px solid var(--gold);
+    background: rgba(185, 143, 46, 0.2);
+  }
+
+  .key.own-reach {
+    border: 1px solid var(--gold-soft);
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(185, 143, 46, 0.55) 0 2px,
+      transparent 2px 6px
+    );
+  }
+
+  .key.threat {
+    border: 2px solid var(--crimson);
+    background: rgba(163, 34, 34, 0.22);
+  }
+
+  .key.threat-reach {
+    border: 1px solid rgba(163, 34, 34, 0.4);
+    background: repeating-linear-gradient(
+      45deg,
+      rgba(163, 34, 34, 0.5) 0 2px,
+      transparent 2px 6px
+    );
+  }
+
+  .key.movable {
+    box-shadow: inset 0 0 0 2px var(--gold);
+  }
+
+  .key.dest {
+    border-radius: 50%;
+    background: var(--azure);
+    opacity: 0.55;
+  }
+
+  .key.kill {
+    border-radius: 50%;
+    background: var(--crimson);
+    opacity: 0.7;
   }
 
   h3 {
