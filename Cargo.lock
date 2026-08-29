@@ -228,6 +228,7 @@ dependencies = [
 [[package]]
 name = "mcts"
 version = "0.4.0"
+source = "git+https://github.com/skylerberg/monte_carlo?rev=624f924d47387e1f55e4f16bb5ac4e4dd9abdc09#624f924d47387e1f55e4f16bb5ac4e4dd9abdc09"
 dependencies = [
  "hashbrown",
  "rand_core",
