@@ -70,8 +70,10 @@ nothing. `search.rs` scores material, castles, a trebuchet's distance from the
 nearest hilltop and a ram's from the nearest castle, and squashes the difference
 into `[0, 1]` — which is what gives the search a gradient to climb.
 
-Search runs at roughly 600k iterations a second natively, so even the top
-difficulty answers well inside a second in the browser.
+Search runs at roughly 600k iterations a second natively at a small budget,
+falling towards 425k as the tree grows. Every difficulty but the top one
+answers inside a second in the browser; the top one trades a few seconds of
+thinking for the strength.
 
 ## Checking it
 

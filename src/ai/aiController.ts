@@ -8,14 +8,16 @@ export interface Difficulty {
   blurb: string
 }
 
-/// Iterations are per decision, and a turn is up to three decisions. The
-/// search runs at roughly half a million iterations a second in wasm, so even
-/// the top setting answers well inside a second.
+/// Iterations are per decision, and a turn is up to three decisions.
+/// Throughput falls as the tree grows — a little over 500k iterations a second
+/// natively at Squire, about 425k at Warlord, and less again in wasm — so
+/// Warlord takes a second or more per decision and several over a whole turn.
+/// Everything below it still answers inside a second.
 export const DIFFICULTIES: Difficulty[] = [
-  { name: 'Squire', iterations: 400, blurb: 'Sees the next exchange, little more.' },
-  { name: 'Knight', iterations: 4_000, blurb: 'Plays the siege race honestly.' },
-  { name: 'Marshal', iterations: 30_000, blurb: 'Punishes a loose siege engine.' },
-  { name: 'Warlord', iterations: 120_000, blurb: 'Takes a moment, and takes the game.' },
+  { name: 'Squire', iterations: 4_000, blurb: 'Sees the next exchange, little more.' },
+  { name: 'Knight', iterations: 30_000, blurb: 'Plays the siege race honestly.' },
+  { name: 'Marshal', iterations: 120_000, blurb: 'Punishes a loose siege engine.' },
+  { name: 'Warlord', iterations: 500_000, blurb: 'Takes a moment, and takes the game.' },
 ]
 
 /// One worker for the whole session. Each request supersedes the last, so a
