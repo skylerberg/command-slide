@@ -1,6 +1,6 @@
 # Command Slide
 
-Command Slide is a two-player siege game on a 7×7 board. Complete rules,
+Command Slide is a two-player siege game on a 9×7 board. Complete rules,
 including every interpretation chosen where the printed rules were silent, are
 in `RULES.md`.
 

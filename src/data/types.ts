@@ -2,11 +2,21 @@
 // on the Rust side by `command-slide-core/tests/wire_format.rs`; change one and
 // change the other.
 
-export const BOARD_SIZE = 7
-export const CASTLE_COLS = [0, 3, 6]
+/** Nine files across, seven ranks up: the outer file on each wing is empty. */
+export const BOARD_ROWS = 7
+export const BOARD_COLS = 9
+export const CASTLE_COLS = [1, 4, 7]
 export const BACK_ROW = [0, 6]
 export const HILLTOP_ROW = 3
-export const HILLTOP_COLS = [0, 3, 6]
+export const HILLTOP_COLS = CASTLE_COLS
+/** The walls filling the middle row between the hilltops, in slot order. */
+export const WALL_SQUARES: Square[] = [
+  { row: HILLTOP_ROW, col: 2 },
+  { row: HILLTOP_ROW, col: 3 },
+  { row: HILLTOP_ROW, col: 5 },
+  { row: HILLTOP_ROW, col: 6 },
+]
+export const FILE_LETTERS = 'abcdefghi'
 
 export type PieceKind =
   | 'swordsman'
@@ -45,13 +55,18 @@ export type Choice =
   | { type: 'holdFire'; from: Square }
 
 /** What one shot destroyed. A shot destroys exactly one thing. */
-export type Casualty = { type: 'piece'; piece: Piece } | { type: 'castle' }
+export type Casualty =
+  | { type: 'piece'; piece: Piece }
+  | { type: 'castle' }
+  | { type: 'wall' }
 
 export type Outcome = { type: 'winner'; player: number } | { type: 'draw' }
 
 export interface GameState {
   board: (Piece | null)[][]
   castles: boolean[][]
+  /** Indexed by `WALL_SQUARES`: whether that wall still stands. */
+  walls: boolean[]
   /** Indexed by player, then by `tokenIndex` — 0 is the row token. */
   tokens: Token[][]
   currentPlayer: number
@@ -102,6 +117,7 @@ export interface AttackPreview {
   covered: Square[]
   threatenedPieces: Square[]
   threatenedCastles: Square[]
+  threatenedWalls: Square[]
 }
 
 /** What one move puts within reach of the volley still to come this turn. */
@@ -110,6 +126,7 @@ export interface MoveOutcome {
   to: Square
   threatenedPieces: Square[]
   threatenedCastles: Square[]
+  threatenedWalls: Square[]
 }
 
 /** What sliding a token to a line sets up, now and next turn. */
@@ -120,6 +137,7 @@ export interface SlideOutcome {
   covered: Square[]
   threatenedPieces: Square[]
   threatenedCastles: Square[]
+  threatenedWalls: Square[]
 }
 
 export const TOKEN_KINDS: TokenKind[] = ['row', 'column']
@@ -174,6 +192,18 @@ export function isHilltop(state: GameState, square: Square): boolean {
   if (square.row === HILLTOP_ROW && HILLTOP_COLS.includes(square.col)) return true
   const slot = castleSlotAt(square)
   return slot !== null && !state.castles[slot.owner][slot.index]
+}
+
+/** The wall slot on `square`, whether or not that wall still stands. */
+export function wallSlotAt(square: Square): number | null {
+  const index = WALL_SQUARES.findIndex((wall) => sameSquare(wall, square))
+  return index < 0 ? null : index
+}
+
+/** Whether a wall is still standing on `square`. */
+export function wallStands(state: GameState, square: Square): boolean {
+  const slot = wallSlotAt(square)
+  return slot !== null && state.walls[slot]
 }
 
 /** The castle slot on `square`, whether or not that castle still stands. */
@@ -260,7 +290,7 @@ export function attackTargets(from: Square, kind: PieceKind): Square[] {
     .map(([drow, dcol]) => ({ row: from.row + drow, col: from.col + dcol }))
     .filter(
       (square) =>
-        square.row >= 0 && square.row < BOARD_SIZE && square.col >= 0 && square.col < BOARD_SIZE,
+        square.row >= 0 && square.row < BOARD_ROWS && square.col >= 0 && square.col < BOARD_COLS,
     )
 }
 
@@ -279,8 +309,18 @@ export function lineOf(kind: TokenKind, square: Square): number {
   return kind === 'row' ? square.row : square.col
 }
 
+/** How many lines of this kind the board has: 7 ranks, 9 files. */
+export function lineCount(kind: TokenKind): number {
+  return kind === 'row' ? BOARD_ROWS : BOARD_COLS
+}
+
+/** How many squares sit on one such line — the other dimension. */
+export function lineLength(kind: TokenKind): number {
+  return lineCount(otherToken(kind))
+}
+
 export function squaresOnLine(kind: TokenKind, line: number): Square[] {
-  return Array.from({ length: BOARD_SIZE }, (_, i) =>
+  return Array.from({ length: lineLength(kind) }, (_, i) =>
     kind === 'row' ? { row: line, col: i } : { row: i, col: line },
   )
 }

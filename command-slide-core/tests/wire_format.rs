@@ -2,7 +2,7 @@
 //! rather than an implementation detail. A rename that slips through here
 //! breaks the UI silently at runtime.
 
-use command_slide_core::rules::{apply_logged, GameEvent};
+use command_slide_core::rules::apply_logged;
 use command_slide_core::types::*;
 use command_slide_core::preview::{move_outcomes, slide_outcomes};
 use command_slide_core::{initial_state, settle_state};
@@ -23,6 +23,7 @@ fn game_state_serializes_with_the_keys_the_ui_reads() {
     for key in [
         "board",
         "castles",
+        "walls",
         "tokens",
         "currentPlayer",
         "phase",
@@ -37,12 +38,17 @@ fn game_state_serializes_with_the_keys_the_ui_reads() {
 
     assert_eq!(field(&value, "phase"), json!("slide"));
     assert_eq!(field(&value, "outcome"), json!(null));
+    // Nine columns to a row, seven rows to the board.
+    assert_eq!(field(&value, "board").as_array().unwrap().len(), 7);
+    assert_eq!(field(&value, "board")[0].as_array().unwrap().len(), 9);
     assert_eq!(
-        field(&value, "board")[0][3],
+        field(&value, "board")[0][4],
         json!({ "kind": "trebuchet", "owner": 0 }),
     );
-    assert_eq!(field(&value, "board")[0][0], json!(null));
+    assert_eq!(field(&value, "board")[0][1], json!(null), "its castle square");
+    assert_eq!(field(&value, "board")[0][0], json!(null), "the empty wing");
     assert_eq!(field(&value, "castles"), json!([[true, true, true], [true, true, true]]));
+    assert_eq!(field(&value, "walls"), json!([true, true, true, true]));
     // Index 0 is the row token, index 1 the column token, matching
     // `TokenKind::index`.
     assert_eq!(
@@ -50,6 +56,15 @@ fn game_state_serializes_with_the_keys_the_ui_reads() {
         json!([
             { "line": 0, "face": "movement" },
             { "line": 0, "face": "movement" },
+        ]),
+    );
+    // Umber's tokens start on the far edges, and the file track is two lines
+    // longer than the rank track.
+    assert_eq!(
+        field(&value, "tokens")[1],
+        json!([
+            { "line": 6, "face": "movement" },
+            { "line": 8, "face": "movement" },
         ]),
     );
 
@@ -87,20 +102,20 @@ fn choices_are_a_tagged_union() {
         (Choice::Pass, json!({ "type": "pass" })),
         (
             Choice::Attack {
-                from: Square::new(3, 3),
-                target: Square::new(6, 0),
+                from: Square::new(3, 4),
+                target: Square::new(6, 1),
             },
             json!({
                 "type": "attack",
-                "from": { "row": 3, "col": 3 },
-                "target": { "row": 6, "col": 0 },
+                "from": { "row": 3, "col": 4 },
+                "target": { "row": 6, "col": 1 },
             }),
         ),
         (
             Choice::HoldFire {
-                from: Square::new(3, 3),
+                from: Square::new(3, 4),
             },
-            json!({ "type": "holdFire", "from": { "row": 3, "col": 3 } }),
+            json!({ "type": "holdFire", "from": { "row": 3, "col": 4 } }),
         ),
     ];
 
@@ -128,16 +143,18 @@ fn events_use_camel_case_field_names() {
         json!({ "type": "slid", "player": 0, "token": "row", "from": 0, "to": 1 }),
     );
 
-    // A volley is announced once, and every shot in it is its own event.
+    // A volley is announced once, and every shot in it is its own event. The
+    // walls are left standing, so this rank carries one of each casualty.
     let mut state = initial_state();
-    state.board = [[None; BOARD_SIZE]; BOARD_SIZE];
+    state.board = [[None; BOARD_COLS]; BOARD_ROWS];
     for (row, col, kind, owner) in [
-        (3, 3, PieceKind::Trebuchet, 0),
-        (3, 4, PieceKind::Swordsman, 0),
-        (0, 1, PieceKind::BatteringRam, 0),
-        (2, 4, PieceKind::Archer, 1),
-        (6, 1, PieceKind::Trebuchet, 1),
-        (6, 2, PieceKind::BatteringRam, 1),
+        (3, 1, PieceKind::Swordsman, 0),
+        (3, 4, PieceKind::Trebuchet, 0),
+        (3, 7, PieceKind::Swordsman, 0),
+        (0, 3, PieceKind::BatteringRam, 0),
+        (2, 1, PieceKind::Archer, 1),
+        (6, 2, PieceKind::Trebuchet, 1),
+        (6, 3, PieceKind::BatteringRam, 1),
     ] {
         state.set_piece(Square::new(row, col), Some(Piece { kind, owner }));
     }
@@ -155,34 +172,13 @@ fn events_use_camel_case_field_names() {
         json!({ "type": "volley", "player": 0, "token": "row", "line": 3 }),
     );
 
-    // The trebuchet on the centre hilltop bears on all three enemy castles and
-    // brings down one of them.
+    // The swordsman on the left hilltop takes the archer above it, over the
+    // wall it could have broken instead.
     let events = apply_logged(
         &mut state,
         &Choice::Attack {
-            from: Square::new(3, 3),
-            target: Square::new(6, 0),
-        },
-    );
-    assert_eq!(
-        serde_json::to_value(&events[0]).unwrap(),
-        json!({
-            "type": "struck",
-            "player": 0,
-            "token": "row",
-            "kind": "trebuchet",
-            "from": { "row": 3, "col": 3 },
-            "target": { "row": 6, "col": 0 },
-            "casualty": { "type": "castle" },
-        }),
-    );
-
-    // Then the swordsman further along the rank takes the archer.
-    let events = apply_logged(
-        &mut state,
-        &Choice::Attack {
-            from: Square::new(3, 4),
-            target: Square::new(2, 4),
+            from: Square::new(3, 1),
+            target: Square::new(2, 1),
         },
     );
     assert_eq!(
@@ -192,22 +188,66 @@ fn events_use_camel_case_field_names() {
             "player": 0,
             "token": "row",
             "kind": "swordsman",
-            "from": { "row": 3, "col": 4 },
-            "target": { "row": 2, "col": 4 },
+            "from": { "row": 3, "col": 1 },
+            "target": { "row": 2, "col": 1 },
             "casualty": { "type": "piece", "piece": { "kind": "archer", "owner": 1 } },
         }),
     );
+
+    // The trebuchet on the centre hilltop bears on all three enemy castles and
+    // brings down one of them.
+    let events = apply_logged(
+        &mut state,
+        &Choice::Attack {
+            from: Square::new(3, 4),
+            target: Square::new(6, 1),
+        },
+    );
+    assert_eq!(
+        serde_json::to_value(&events[0]).unwrap(),
+        json!({
+            "type": "struck",
+            "player": 0,
+            "token": "row",
+            "kind": "trebuchet",
+            "from": { "row": 3, "col": 4 },
+            "target": { "row": 6, "col": 1 },
+            "casualty": { "type": "castle" },
+        }),
+    );
+
+    // And the swordsman on the right hilltop breaks the wall beside it.
+    let events = apply_logged(
+        &mut state,
+        &Choice::Attack {
+            from: Square::new(3, 7),
+            target: Square::new(3, 6),
+        },
+    );
+    assert_eq!(
+        serde_json::to_value(&events[0]).unwrap(),
+        json!({
+            "type": "struck",
+            "player": 0,
+            "token": "row",
+            "kind": "swordsman",
+            "from": { "row": 3, "col": 7 },
+            "target": { "row": 3, "col": 6 },
+            "casualty": { "type": "wall" },
+        }),
+    );
+    assert_eq!(state.walls, [true, true, true, false]);
 }
 
 #[test]
 fn holding_fire_is_its_own_event() {
     let mut state = initial_state();
-    state.board = [[None; BOARD_SIZE]; BOARD_SIZE];
+    state.board = [[None; BOARD_COLS]; BOARD_ROWS];
     for (row, col, kind, owner) in [
-        (3, 3, PieceKind::Swordsman, 0),
-        (0, 1, PieceKind::Trebuchet, 0),
-        (2, 3, PieceKind::Archer, 1),
-        (6, 1, PieceKind::Trebuchet, 1),
+        (3, 1, PieceKind::Swordsman, 0),
+        (0, 3, PieceKind::Trebuchet, 0),
+        (2, 1, PieceKind::Archer, 1),
+        (6, 2, PieceKind::Trebuchet, 1),
     ] {
         state.set_piece(Square::new(row, col), Some(Piece { kind, owner }));
     }
@@ -223,7 +263,7 @@ fn holding_fire_is_its_own_event() {
     let events = apply_logged(
         &mut state,
         &Choice::HoldFire {
-            from: Square::new(3, 3),
+            from: Square::new(3, 1),
         },
     );
     assert_eq!(
@@ -233,7 +273,7 @@ fn holding_fire_is_its_own_event() {
             "player": 0,
             "token": "row",
             "kind": "swordsman",
-            "from": { "row": 3, "col": 3 },
+            "from": { "row": 3, "col": 1 },
         }),
     );
 }
@@ -253,14 +293,14 @@ fn outcomes_are_tagged() {
 #[test]
 fn preview_shapes_use_the_keys_the_board_draws_from() {
     let mut state = initial_state();
-    state.board = [[None; BOARD_SIZE]; BOARD_SIZE];
+    state.board = [[None; BOARD_COLS]; BOARD_ROWS];
     for (row, col, kind, owner) in [
         (0, 1, PieceKind::Swordsman, 0),
         (1, 3, PieceKind::Swordsman, 1),
-        (5, 5, PieceKind::Trebuchet, 0),
-        (5, 4, PieceKind::BatteringRam, 0),
-        (6, 6, PieceKind::Trebuchet, 1),
-        (6, 5, PieceKind::BatteringRam, 1),
+        (5, 0, PieceKind::Trebuchet, 0),
+        (5, 8, PieceKind::BatteringRam, 0),
+        (6, 0, PieceKind::Trebuchet, 1),
+        (6, 8, PieceKind::BatteringRam, 1),
     ] {
         state.set_piece(Square::new(row, col), Some(Piece { kind, owner }));
     }
@@ -291,6 +331,7 @@ fn preview_shapes_use_the_keys_the_board_draws_from() {
         json!([{ "row": 1, "col": 3 }]),
     );
     assert_eq!(field(onto_the_rank, "threatenedCastles"), json!([]));
+    assert_eq!(field(onto_the_rank, "threatenedWalls"), json!([]));
 
     let mut sliding = state;
     sliding.phase = Phase::Slide;
@@ -312,7 +353,7 @@ fn preview_shapes_use_the_keys_the_board_draws_from() {
         .expect("file b holds a piece to move");
     assert_eq!(field(onto_file_b, "token"), json!("column"));
     assert_eq!(field(onto_file_b, "movers"), json!([{ "row": 0, "col": 1 }]));
-    for key in ["covered", "threatenedPieces", "threatenedCastles"] {
+    for key in ["covered", "threatenedPieces", "threatenedCastles", "threatenedWalls"] {
         assert!(onto_file_b.get(key).is_some(), "SlideOutcome is missing {key}");
     }
 }

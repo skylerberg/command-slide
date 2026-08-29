@@ -46,8 +46,9 @@
         <li>Eliminate both of your opponent's siege engines.</li>
       </ul>
       <p class="aside">
-        Only siege engines damage castles, and only ordinary pieces damage pieces. Take both of a
-        side's siege engines and they can never raze a castle again — which is why that ends it.
+        Only siege engines damage castles, and only ordinary pieces damage pieces and walls. Take
+        both of a side's siege engines and they can never raze a castle again — which is why that
+        ends it.
       </p>
     </section>
 
@@ -61,8 +62,14 @@
         </li>
         <li>
           A destroyed castle takes a hilltop token, and the square becomes high ground either side
-          may occupy. Raze a corner castle and a trebuchet standing in its rubble bears on the
+          may occupy. Raze an outer castle and a trebuchet standing in its rubble bears on the
           middle one, three squares along the back rank.
+        </li>
+        <li>
+          Four <strong>walls</strong> fill the middle row between the hilltops. They belong to
+          nobody and block every slide, in or through — but they stop nothing that is thrown. Any
+          ordinary piece breaks one with a single shot; the siege engines cannot touch them, so
+          it is the infantry that opens a lane to the high ground.
         </li>
       </ul>
     </section>
@@ -151,12 +158,16 @@
           <span>
             <strong>Trebuchet</strong> — hits castles exactly three squares away, straight or
             diagonal, and only while it stands on a hilltop. From the centre hilltop it bears on
-            every castle on the board, and brings one of them down a turn.
+            every castle on the board, and brings one of them down a turn. It never touches a
+            piece or a wall.
           </span>
         </li>
         <li>
           <span class="engine"><PieceIcon kind="batteringRam" size={20} /></span>
-          <span><strong>Battering Ram</strong> — hits a castle one square away, straight only.</span>
+          <span>
+            <strong>Battering Ram</strong> — hits a castle one square away, straight only. Walls
+            are not its business either.
+          </span>
         </li>
       </ul>
     </section>
@@ -164,7 +175,7 @@
     <section>
       <h3>Reading the board</h3>
       <ul class="marks">
-        <li><i class="key own"></i> a piece or castle your armed token has a shot at</li>
+        <li><i class="key own"></i> a piece, castle or wall your armed token has a shot at</li>
         <li><i class="key own-reach"></i> every square that line covers, occupied or not</li>
         <li><i class="key threat"></i> what the opponent's armed token has a shot at</li>
         <li><i class="key threat-reach"></i> the squares it covers — move into one and it has a

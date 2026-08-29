@@ -1,8 +1,8 @@
 # Command Slide
 
-A playable implementation of Command Slide — a two-player siege game on a 7×7
-board — with a browser interface and an opponent driven by Monte Carlo tree
-search. The complete rules, including every reading chosen where the printed
+A playable implementation of Command Slide — a two-player siege game on a board
+nine files across and seven ranks deep — with a browser interface and an
+opponent driven by Monte Carlo tree search. The complete rules, including every reading chosen where the printed
 rules were silent, are in [RULES.md](RULES.md).
 
 ## Running it
@@ -78,8 +78,8 @@ thinking for the strength.
 ## Checking it
 
 ```sh
-cargo test                                    # 26 engine tests
-pnpm test                                      # 15 frontend tests
+cargo test                                    # 36 engine tests
+pnpm test                                      # 18 frontend tests
 pnpm run check                                 # svelte-check
 
 pnpm run run-games -- bench                    # search throughput
@@ -107,4 +107,6 @@ least three turns to bring down, while two siege engines can be picked off much
 sooner. The trebuchet is still what both sides play around: castles and hilltops
 share files, so from the centre hilltop it bears on every castle on the board
 and takes one a turn. The counterplay is the telegraph — a token is slid a full
-turn before it fires, so an approach can be seen and answered.
+turn before it fires, so an approach can be seen and answered — and the walls,
+which pen every hilltop in on the middle rank and cannot be broken by the siege
+train that wants to stand there.

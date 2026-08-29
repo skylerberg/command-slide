@@ -1,31 +1,34 @@
 # Command Slide
 
-A two-player siege game on a 7×7 board. Each side commands ten pieces, two
-command tokens, and three castles.
+A two-player siege game on a board nine files across and seven ranks deep. Each
+side commands ten pieces, two command tokens, and three castles, and four
+neutral walls stand between them.
 
 ## The board
 
 ```
-       a    b    c    d    e    f    g
-    ┌────┬────┬────┬────┬────┬────┬────┐
-  7 │ ▣C │ Sp │ Ar │ ▣C │ Ar │ Sp │ ▣C │   Ivory back rank
-    ├────┼────┼────┼────┼────┼────┼────┤   (the trebuchet starts on
-  6 │    │ Sw │ Fl │ Rm │ Fl │ Sw │    │    the middle castle)
-    ├────┼────┼────┼────┼────┼────┼────┤
-  5 │    │    │    │    │    │    │    │
-    ├────┼────┼────┼────┼────┼────┼────┤
-  4 │ ▲H │    │    │ ▲H │    │    │ ▲H │   the hilltops
-    ├────┼────┼────┼────┼────┼────┼────┤
-  3 │    │    │    │    │    │    │    │
-    ├────┼────┼────┼────┼────┼────┼────┤
-  2 │    │ Sw │ Fl │ Rm │ Fl │ Sw │    │
-    ├────┼────┼────┼────┼────┼────┼────┤
-  1 │ ▣C │ Sp │ Ar │ ▣C │ Ar │ Sp │ ▣C │   Umber back rank
-    └────┴────┴────┴────┴────┴────┴────┘
+       a    b    c    d    e    f    g    h    i
+    ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
+  7 │    │ ▣C │ Sp │ Ar │ ▣C │ Ar │ Sp │ ▣C │    │  Ivory back rank
+    ├────┼────┼────┼────┼────┼────┼────┼────┼────┤  (the trebuchet starts
+  6 │    │    │ Sw │ Fl │ Rm │ Fl │ Sw │    │    │   on the middle castle)
+    ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+  5 │    │    │    │    │    │    │    │    │    │
+    ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+  4 │    │ ▲H │ ●W │ ●W │ ▲H │ ●W │ ●W │ ▲H │    │  hilltops and walls
+    ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+  3 │    │    │    │    │    │    │    │    │    │
+    ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+  2 │    │    │ Sw │ Fl │ Rm │ Fl │ Sw │    │    │
+    ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+  1 │    │ ▣C │ Sp │ Ar │ ▣C │ Ar │ Sp │ ▣C │    │  Umber back rank
+    └────┴────┴────┴────┴────┴────┴────┴────┴────┘
 ```
 
 `Sp` spearman · `Ar` archer · `Sw` swordsman · `Fl` flail · `Rm` battering ram.
-The trebuchet (not shown) stands on each side's middle castle at d7 and d1.
+The trebuchet (not shown) stands on each side's middle castle at e7 and e1. The
+outer files, a and i, carry no terrain and start empty — they are the room the
+armies have to work around the walls.
 
 **Castles** are terrain, not pieces. They never move and never attack, and only
 a siege engine can destroy one. You may stand a piece on your own castle — the
@@ -34,10 +37,17 @@ enemy castle stops a slide dead, and a piece may neither enter it nor pass
 through it. **A destroyed castle takes a hilltop token**, which turns the square
 into ordinary high ground that either side may occupy.
 
-**Hilltops** are the three middle-row squares a1-side, centre, and g-side — a4,
-d4 and g4 — plus the rubble of every castle that has fallen. Castles and
-hilltops share files, which is what puts every castle exactly three squares from
-a hilltop.
+**Hilltops** are the three middle-row squares b4, e4 and h4, plus the rubble of
+every castle that has fallen. Castles and hilltops share files, which is what
+puts every castle exactly three squares from a hilltop.
+
+**Walls** are the four middle-row squares between the hilltops — c4, d4, f4 and
+g4. They belong to nobody. A standing wall stops a slide the way an enemy castle
+does: a piece may neither enter it nor pass through it. It stops nothing that is
+thrown. Any ordinary piece breaks a wall with a single shot, and the square is
+plain ground thereafter; siege engines cannot touch one. Each hilltop is walled
+in on the middle row, so the road to the high ground runs either around the
+walls or through the infantry that clears them.
 
 Ivory moves first.
 
@@ -104,8 +114,9 @@ further down the line cannot spend itself on a target an earlier one has already
 taken. **Attackers do not move.** Nothing blocks an attack — a spearman strikes
 over the square in front of it.
 
-Ordinary pieces destroy enemy *pieces* and never damage a castle. Siege engines
-destroy enemy *castles* and never touch a piece. Friendly pieces are never hit.
+Ordinary pieces destroy enemy *pieces* and *walls*, and never damage a castle.
+Siege engines destroy enemy *castles* and never touch a piece or a wall.
+Friendly pieces are never hit.
 
 ## Attacks
 
@@ -128,12 +139,16 @@ Relative to the piece, `X` marks what it strikes.
   only while it stands on a hilltop. Off a hilltop it throws nothing.
 * **Battering Ram** — a castle one square away, straight only.
 
+A wall counts as a target for the first four and for neither siege engine, on
+exactly the squares each pattern already covers.
+
 From the centre hilltop a trebuchet bears on *every* castle on the board — and
 brings down one of them a turn, since a piece strikes a single target. That
-makes d4 the sharpest square in the game and the trebuchet's approach the thing
-both sides are really playing around. A castle that falls hands back high
-ground: raze the corner castle at a1 and a trebuchet standing in its rubble
-bears on d1, three squares along the back rank.
+makes e4 the sharpest square in the game and the trebuchet's approach the thing
+both sides are really playing around — and the walls at d4 and f4 mean no rook
+move along rank 4 reaches it until one of them is broken. A castle that falls
+hands back high ground: raze the outer castle at b1 and a trebuchet standing in
+its rubble bears on e1, three squares along the back rank.
 
 ## Interpretations
 
@@ -142,8 +157,8 @@ chosen, this is the one the engine implements:
 
 * **Castles are terrain.** The rules text says three castles and the printed
   board draws two per side — but the back-rank middle square is shaded like the
-  castle corners and holds the trebuchet. Castles therefore sit on the back rank
-  at files a, d and g, and the trebuchet starts standing on the middle one.
+  outer two and holds the trebuchet. Castles therefore sit on the back rank at
+  files b, e and h, and the trebuchet starts standing on the middle one.
 * **The printed hilltops are the middle row only.** Only from there can a
   trebuchet reach an enemy castle at range three at the start of a game, so
   back-rank hilltops would be decorative until a castle falls on one.
@@ -162,6 +177,15 @@ chosen, this is the one the engine implements:
   doubling two attackers onto one victim only ever wastes a shot — but resolving
   in order means a later attacker is never offered a target that is already
   gone.
+* **Walls fall to the infantry alone.** A wall is neither a piece nor a castle,
+  so the rule that splits those two targets does not say which weapons break
+  one. Reading it as the ordinary pieces' business keeps the siege train
+  strictly anti-castle, and makes clearing a lane to a hilltop something an army
+  has to spend an ordinary activation on rather than something a ram does in
+  passing.
+* **A wall blocks movement only.** "The walls block movement" is read against
+  the standing rule that nothing blocks an attack: a spearman strikes over a
+  wall exactly as it strikes over an occupied square.
 * **Holding fire is a choice, one attacker at a time.** "You may also flip the
   token and take no action" is read as covering each piece in a volley
   separately, so an enemy piece may be spared deliberately — worth doing when it

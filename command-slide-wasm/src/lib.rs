@@ -5,7 +5,7 @@ use command_slide_core::rand_core::SeedableRng;
 use command_slide_core::preview::{move_outcomes, order_matters, pending_attackers, slide_outcomes};
 use command_slide_core::rules::{apply_logged, attack_preview, GameEvent};
 use command_slide_core::search::{Ai, AiConfig};
-use command_slide_core::types::{Choice, GameState, Square, TokenKind};
+use command_slide_core::types::{Choice, GameState, Square, TokenKind, WALL_SQUARES};
 use command_slide_core::{initial_state, legal_choices, AttackReach};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -42,6 +42,7 @@ struct AttackPreview {
     covered: Vec<Square>,
     threatened_pieces: Vec<Square>,
     threatened_castles: Vec<Square>,
+    threatened_walls: Vec<Square>,
 }
 
 #[derive(Serialize)]
@@ -89,6 +90,13 @@ pub fn wasm_attack_preview(state_json: &str, player: u8, token_json: &str) -> St
             .enumerate()
             .filter(|(_, &hit)| hit)
             .map(|(index, _)| GameState::castle_square(enemy, index))
+            .collect(),
+        threatened_walls: reach
+            .walls
+            .iter()
+            .enumerate()
+            .filter(|(_, &hit)| hit)
+            .map(|(index, _)| WALL_SQUARES[index])
             .collect(),
     })
 }
