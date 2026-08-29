@@ -1,15 +1,17 @@
 <script lang="ts">
   interface Props {
     kind: 'castle' | 'hilltop' | 'wall'
+    /** Omit to fill the parent, which is how the board scales terrain with
+        the cell. */
     size?: number
   }
 
-  let { kind, size = 34 }: Props = $props()
+  let { kind, size }: Props = $props()
 </script>
 
 <svg
-  width={size}
-  height={size}
+  class="terrain-icon"
+  style={size === undefined ? undefined : `width:${size}px;height:${size}px`}
   viewBox="0 0 32 32"
   fill="none"
   stroke="currentColor"
@@ -33,3 +35,11 @@
     <path d="M4 27.5h6" />
   {/if}
 </svg>
+
+<style>
+  .terrain-icon {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+</style>

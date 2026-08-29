@@ -395,11 +395,11 @@
         >
           <span class="terrain">
             {#if slot && game.castles[slot.owner][slot.index]}
-              <span class="castle"><TerrainIcon kind="castle" size={40} /></span>
+              <span class="castle"><TerrainIcon kind="castle" /></span>
             {:else if wallStands(game, square)}
-              <span class="rampart"><TerrainIcon kind="wall" size={40} /></span>
+              <span class="rampart"><TerrainIcon kind="wall" /></span>
             {:else if isHilltop(game, square)}
-              <span class="hill"><TerrainIcon kind="hilltop" size={34} /></span>
+              <span class="hill"><TerrainIcon kind="hilltop" /></span>
             {/if}
           </span>
 
@@ -464,12 +464,22 @@
 
 <style>
   .board-frame {
-    /* Nine files wide and seven deep, so the cell has to answer to the
-       viewport's width as well as its height. */
-    --cell: clamp(26px, min(9vh, 6.2vw), 68px);
+    --pad: 0.4rem;
+    /* Nine files plus a token track each side, at 0.72 of a cell: the grid is
+       this many cells wide, and the cell is the width divided by it. */
+    --spans: 10.44;
+    /* The board answers to the space it is actually in, not to the window:
+       `cqw` is measured against the containing column, so the same rule fills
+       a phone edge to edge and leaves the desktop sidebar alone. Height still
+       has a say, for a window that is wide and short. */
+    --cell: clamp(
+      26px,
+      min(9vh, calc((100cqw - 2 * var(--pad)) / var(--spans))),
+      68px
+    );
     --track: calc(var(--cell) * 0.72);
     display: inline-block;
-    padding: 0.4rem;
+    padding: var(--pad);
   }
 
   .grid {
@@ -607,6 +617,7 @@
   }
 
   .rampart {
+    width: 59%;
     color: var(--umber-edge);
     opacity: 0.9;
   }
@@ -626,12 +637,23 @@
     pointer-events: none;
   }
 
+  /* Terrain is drawn as a share of the cell: a fixed size spills off the
+     square once the board shrinks to a phone. */
+  .castle,
+  .rampart,
+  .hill {
+    display: block;
+    aspect-ratio: 1;
+  }
+
   .castle {
+    width: 59%;
     color: var(--ink);
     opacity: 0.55;
   }
 
   .hill {
+    width: 50%;
     color: var(--ink-soft);
     opacity: 0.6;
   }
