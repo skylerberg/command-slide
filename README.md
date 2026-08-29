@@ -22,11 +22,10 @@ Requires a Rust toolchain with the `wasm32-unknown-unknown` target, and
 
 `.github/workflows/deploy.yml` builds the site on every push to `main` and
 publishes it to GitHub Pages at `https://skylerberg.github.io/command-slide/`.
-The workflow checks out `monte_carlo` alongside this repository so the `mcts`
-path dependency resolves, at the commit named in the `ref:` there — bump it
-deliberately rather than tracking that repository's default branch. Vite's
-`base` is pinned to `/command-slide/` to match the project-page URL; serving
-from anywhere else means changing it.
+Nothing about the engine is configured here: `mcts` is a git dependency pinned
+in the workspace `Cargo.toml`, so the workflow builds the commit that names.
+Vite's `base` is pinned to `/command-slide/` to match the project-page URL;
+serving from anywhere else means changing it.
 
 Enable it under *Settings → Pages* by setting the source to *GitHub Actions*.
 
@@ -50,8 +49,9 @@ choices and never decides anything about the game itself.
 
 ## The AI
 
-The opponent is [`mcts`](https://github.com/skylerberg/monte_carlo), the sibling
-`monte_carlo` crate, consumed as a path dependency. The game is deterministic
+The opponent is [`mcts`](https://github.com/skylerberg/monte_carlo), the
+`monte_carlo` crate, pinned to a commit in `Cargo.toml` — bump it deliberately
+rather than tracking that repository's default branch. The game is deterministic
 and perfect information, so most of the trait falls away: `determinize_into` is
 a bitwise copy, `Side` is `()`, and `ROOT_CHOICES_INVARIANT` is provably true.
 

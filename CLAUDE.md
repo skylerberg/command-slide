@@ -7,8 +7,8 @@ in `RULES.md`.
 ## Tech Stack
 
 - Rust (game engine and AI), Svelte 5 + TypeScript (frontend), Vite (build)
-- Monte Carlo tree search via the `mcts` crate from the sibling `monte_carlo`
-  repository, consumed as a path dependency from the workspace root
+- Monte Carlo tree search via the `mcts` crate from the `monte_carlo`
+  repository, a git dependency pinned to a commit in the workspace root
 
 ## Project Structure
 
