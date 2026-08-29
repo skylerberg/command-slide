@@ -1,27 +1,43 @@
 //! Board geometry, pieces, command tokens, and the game state they live in.
 //!
 //! `GameState` is `Copy` on purpose: the search clones one per determinization
-//! and per rollout step, and a memcpy of ~130 bytes is cheaper than anything
-//! that chases a pointer. That is why the board is a fixed array and the
+//! and per rollout step, and a memcpy of ~150 bytes is cheaper than anything
+//! that chases a pointer. That is why the board is a fixed array, the walls are
+//! four bools against fixed squares rather than a second grid, and the
 //! activation queue is an array plus a length rather than a `Vec`.
 
 use serde::{Deserialize, Serialize};
 
-pub const BOARD_SIZE: usize = 7;
+/// The board is wider than it is deep: nine files across, seven ranks up. The
+/// outermost files carry no terrain and start empty, which is what gives the
+/// middle row room for the walls.
+pub const BOARD_ROWS: usize = 7;
+pub const BOARD_COLS: usize = 9;
 pub const NUM_PLAYERS: usize = 2;
 pub const CASTLES_PER_PLAYER: usize = 3;
+pub const NUM_WALLS: usize = 4;
 
 /// Back row for each player: where their castles stand.
 pub const BACK_ROW: [u8; NUM_PLAYERS] = [0, 6];
 
 /// Columns carrying a castle on a player's back row.
-pub const CASTLE_COLS: [u8; CASTLES_PER_PLAYER] = [0, 3, 6];
+pub const CASTLE_COLS: [u8; CASTLES_PER_PLAYER] = [1, 4, 7];
 
 /// The middle row, and the columns on it that are hilltops. Castles and
 /// hilltops share columns, which is what puts every castle exactly three
 /// squares from a hilltop — straight for the near ones, diagonal for the rest.
 pub const HILLTOP_ROW: u8 = 3;
-pub const HILLTOP_COLS: [u8; 3] = [0, 3, 6];
+pub const HILLTOP_COLS: [u8; 3] = CASTLE_COLS;
+
+/// The walls, which fill the middle row between the hilltops. They are neutral
+/// terrain: they belong to nobody, they block every slide, and any ordinary
+/// piece breaks one with a single shot.
+pub const WALL_SQUARES: [Square; NUM_WALLS] = [
+    Square::new(HILLTOP_ROW, 2),
+    Square::new(HILLTOP_ROW, 3),
+    Square::new(HILLTOP_ROW, 5),
+    Square::new(HILLTOP_ROW, 6),
+];
 
 /// Turns each side may take before the game is called a draw. Nothing in the
 /// rules forces progress, and a search needs every line to terminate.
@@ -98,12 +114,12 @@ impl Square {
     pub fn offset(self, drow: i8, dcol: i8) -> Option<Square> {
         let row = self.row as i8 + drow;
         let col = self.col as i8 + dcol;
-        let in_range = |v: i8| (0..BOARD_SIZE as i8).contains(&v);
-        (in_range(row) && in_range(col)).then(|| Square::new(row as u8, col as u8))
+        let on_board = (0..BOARD_ROWS as i8).contains(&row) && (0..BOARD_COLS as i8).contains(&col);
+        on_board.then(|| Square::new(row as u8, col as u8))
     }
 
     pub fn index(self) -> usize {
-        self.row as usize * BOARD_SIZE + self.col as usize
+        self.row as usize * BOARD_COLS + self.col as usize
     }
 
     pub fn chebyshev(self, other: Square) -> u8 {
@@ -213,11 +229,13 @@ pub enum Outcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameState {
-    pub board: [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE],
+    pub board: [[Option<Piece>; BOARD_COLS]; BOARD_ROWS],
     /// `castles[player][i]` is whether the castle on `CASTLE_COLS[i]` still
     /// stands. Castles are terrain, not pieces: they never move, never attack,
     /// and a piece may stand on one.
     pub castles: [[bool; CASTLES_PER_PLAYER]; NUM_PLAYERS],
+    /// `walls[i]` is whether the wall on `WALL_SQUARES[i]` still stands.
+    pub walls: [bool; NUM_WALLS],
     /// Indexed by player, then by `TokenKind::index`.
     pub tokens: [[Token; 2]; NUM_PLAYERS],
     pub current_player: u8,
@@ -257,14 +275,28 @@ impl GameState {
     }
 
     pub fn squares() -> impl Iterator<Item = Square> {
-        (0..BOARD_SIZE as u8)
-            .flat_map(|row| (0..BOARD_SIZE as u8).map(move |col| Square::new(row, col)))
+        (0..BOARD_ROWS as u8)
+            .flat_map(|row| (0..BOARD_COLS as u8).map(move |col| Square::new(row, col)))
+    }
+
+    /// How many lines of this kind the board has: seven ranks for the row
+    /// token, nine files for the column token.
+    pub fn line_count(kind: TokenKind) -> u8 {
+        match kind {
+            TokenKind::Row => BOARD_ROWS as u8,
+            TokenKind::Column => BOARD_COLS as u8,
+        }
+    }
+
+    /// How many squares sit on one such line — the other dimension.
+    pub fn line_len(kind: TokenKind) -> u8 {
+        Self::line_count(kind.other())
     }
 
     /// The squares of `line`, which is a row for a `Row` token and a column for
     /// a `Column` token.
     pub fn line_squares(kind: TokenKind, line: u8) -> impl Iterator<Item = Square> {
-        (0..BOARD_SIZE as u8).map(move |index| Self::line_square(kind, line, index))
+        (0..Self::line_len(kind)).map(move |index| Self::line_square(kind, line, index))
     }
 
     /// The `index`th square of `line`, counting along the line.
@@ -301,11 +333,28 @@ impl GameState {
         }
     }
 
-    /// Whether a standing enemy castle sits on `square`. A piece may neither
-    /// enter one nor slide through it.
+    /// The wall slot `square` belongs to, if any, whether or not it stands.
+    pub fn wall_slot_at(square: Square) -> Option<usize> {
+        WALL_SQUARES.iter().position(|&wall| wall == square)
+    }
+
+    /// The slot of the wall still standing on `square`, if one is.
+    pub fn standing_wall_at(&self, square: Square) -> Option<usize> {
+        Self::wall_slot_at(square).filter(|&index| self.walls[index])
+    }
+
+    pub fn walls_standing(&self) -> usize {
+        self.walls.iter().filter(|&&w| w).count()
+    }
+
+    /// Whether terrain on `square` stops a slide. A piece may neither enter a
+    /// standing enemy castle nor a standing wall, and may not pass through
+    /// either. Its own castles are open ground.
     pub fn blocks_slide(&self, square: Square, player: u8) -> bool {
-        self.standing_castle_at(square)
-            .is_some_and(|owner| owner != player)
+        self.standing_wall_at(square).is_some()
+            || self
+                .standing_castle_at(square)
+                .is_some_and(|owner| owner != player)
     }
 
     /// The castle slot `square` belongs to, if any, as `(owner, index)`.

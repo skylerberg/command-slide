@@ -1,6 +1,6 @@
 <script lang="ts">
   interface Props {
-    kind: 'castle' | 'hilltop'
+    kind: 'castle' | 'hilltop' | 'wall'
     size?: number
   }
 
@@ -22,6 +22,11 @@
     <path d="M6 28V13h3v-3h3v3h3v-3h3v3h3v-3h3v3h2v15Z" />
     <path d="M13.5 28v-6a2.5 2.5 0 0 1 5 0v6" />
     <path d="M16 10V4h5l-1.6 1.8L21 7.6h-5" />
+  {:else if kind === 'wall'}
+    <!-- A block of stone set in the road. Filled rather than drawn, so it
+         still reads as solid against the square's tint. -->
+    <circle cx="16" cy="16" r="11" fill="currentColor" stroke="none" />
+    <path d="M11.5 12a9 9 0 0 1 4.5-2.7" stroke="#fff" opacity="0.3" />
   {:else}
     <path d="M3 24c4-8 8.5-8 12 0" />
     <path d="M11 27c4.5-8 10-8.5 18 0" />

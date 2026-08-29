@@ -11,7 +11,7 @@ use command_slide_core::rand_core::{Rng, SeedableRng};
 use command_slide_core::rules::{apply, apply_logged, legal_choices_into, Casualty, GameEvent};
 use command_slide_core::search::{Ai, AiConfig, SearchContext};
 use command_slide_core::types::{
-    Choice, GameState, Outcome, PieceKind, Square, TokenFace, TokenKind, BOARD_SIZE,
+    Choice, GameState, Outcome, PieceKind, Square, TokenFace, TokenKind, BOARD_COLS, BOARD_ROWS,
 };
 use command_slide_core::{initial_state, EvalParams};
 use wyrand::WyRand;
@@ -276,23 +276,24 @@ fn render(state: &GameState) -> String {
     };
 
     out.push_str("      ");
-    for col in 0..BOARD_SIZE as u8 {
+    for col in 0..BOARD_COLS as u8 {
         out.push_str(column_marker(0, col));
         out.push(' ');
     }
     out.push('\n');
 
-    for row in 0..BOARD_SIZE as u8 {
+    for row in 0..BOARD_ROWS as u8 {
         let left = if state.token(0, TokenKind::Row).line == row {
             face(0, TokenKind::Row)
         } else {
             "  "
         };
         out.push_str(&format!("{left} {row} |"));
-        for col in 0..BOARD_SIZE as u8 {
+        for col in 0..BOARD_COLS as u8 {
             let square = Square::new(row, col);
             let cell = match state.piece_at(square) {
                 Some(piece) => glyph(piece.kind, piece.owner),
+                None if state.standing_wall_at(square).is_some() => 'O',
                 None => match GameState::castle_slot_at(square) {
                     Some((owner, index)) if state.castles[owner as usize][index] => '#',
                     Some(_) => 'x',
@@ -312,13 +313,13 @@ fn render(state: &GameState) -> String {
     }
 
     out.push_str("      ");
-    for col in 0..BOARD_SIZE as u8 {
+    for col in 0..BOARD_COLS as u8 {
         out.push_str(column_marker(1, col));
         out.push(' ');
     }
     out.push('\n');
     out.push_str(
-        "      # castle  x razed castle, now a hilltop  ^ hilltop  R>/B> movement face  !! attack face\n",
+        "      # castle  x razed castle, now a hilltop  ^ hilltop  O wall  R>/B> movement face  !! attack face\n",
     );
     out
 }
@@ -347,6 +348,9 @@ fn describe(event: &GameEvent) -> String {
                 ),
                 Casualty::Castle => {
                     format!("{shot} razes the castle at ({},{})", target.row, target.col)
+                }
+                Casualty::Wall => {
+                    format!("{shot} breaks the wall at ({},{})", target.row, target.col)
                 }
             }
         }

@@ -4,7 +4,9 @@
   import TokenIcon from './TokenIcon.svelte'
   import { describeMoveOutcome, describeSlideOutcome } from '../data/log'
   import {
-    BOARD_SIZE,
+    BOARD_COLS,
+    BOARD_ROWS,
+    FILE_LETTERS,
     TOKEN_KINDS,
     attackTargets,
     castleSlotAt,
@@ -14,6 +16,7 @@
     sameSquare,
     squareKey,
     tokenOf,
+    wallStands,
   } from '../data/types'
   import type {
     AttackPreview,
@@ -68,7 +71,8 @@
   let hovered: Square | null = $state(null)
   let hoveredSlide: SlideOutcome | null = $state(null)
 
-  const indices = Array.from({ length: BOARD_SIZE }, (_, i) => i)
+  const rows = Array.from({ length: BOARD_ROWS }, (_, i) => i)
+  const cols = Array.from({ length: BOARD_COLS }, (_, i) => i)
 
   let moves = $derived(legalChoices.filter((choice) => choice.type === 'move'))
 
@@ -114,8 +118,17 @@
         ),
   )
 
+  /** Everything one volley could shoot: pieces, castles and now walls too. */
+  function threatened(reach: {
+    threatenedPieces: Square[]
+    threatenedCastles: Square[]
+    threatenedWalls: Square[]
+  }): Square[] {
+    return [...reach.threatenedPieces, ...reach.threatenedCastles, ...reach.threatenedWalls]
+  }
+
   function targeting(outcome: MoveOutcome): boolean {
-    return outcome.threatenedPieces.length > 0 || outcome.threatenedCastles.length > 0
+    return threatened(outcome).length > 0
   }
 
   /** The move to each destination of the selected piece, keyed by destination. */
@@ -140,7 +153,7 @@
     if (!showOutcomes || !hovered) return new Set<string>()
     const outcome = outcomeByDestination.get(squareKey(hovered))
     if (!outcome) return new Set<string>()
-    return new Set([...outcome.threatenedPieces, ...outcome.threatenedCastles].map(squareKey))
+    return keys(threatened(outcome))
   })
 
   /** Where the highlighted piece strikes — from where it would land, if the
@@ -166,13 +179,13 @@
     if (hoveredSlide && showOutcomes) {
       return {
         covered: keys(hoveredSlide.covered),
-        marks: keys([...hoveredSlide.threatenedPieces, ...hoveredSlide.threatenedCastles]),
+        marks: keys(threatened(hoveredSlide)),
       }
     }
     const preview = viewer === null || attacker !== null ? null : volley[viewer]
     return {
       covered: keys(preview?.covered ?? []),
-      marks: keys([...(preview?.threatenedPieces ?? []), ...(preview?.threatenedCastles ?? [])]),
+      marks: preview ? keys(threatened(preview)) : new Set<string>(),
     }
   })
 
@@ -180,7 +193,7 @@
     const preview = !showThreats || viewer === null ? null : volley[1 - viewer]
     return {
       covered: keys(preview?.covered ?? []),
-      marks: keys([...(preview?.threatenedPieces ?? []), ...(preview?.threatenedCastles ?? [])]),
+      marks: preview ? keys(threatened(preview)) : new Set<string>(),
     }
   })
 
@@ -276,10 +289,11 @@
 
   function squareTitle(square: Square): string {
     const piece = pieceAt(game, square)
-    const parts: string[] = [`${'abcdefg'[square.col]}${BOARD_SIZE - square.row}`]
+    const parts: string[] = [`${FILE_LETTERS[square.col]}${BOARD_ROWS - square.row}`]
     if (piece) parts.push(piece.kind)
     const slot = castleSlotAt(square)
     if (slot) parts.push(game.castles[slot.owner][slot.index] ? 'castle' : 'razed castle')
+    if (wallStands(game, square)) parts.push('wall')
     if (isHilltop(game, square)) parts.push('hilltop')
     return parts.join(' · ')
   }
@@ -294,7 +308,7 @@
 <div class="board-frame">
   <div class="grid">
     <div class="corner"></div>
-    {#each indices as col (col)}
+    {#each cols as col (col)}
       <button
         class="track column"
         class:live={trackActive(0, 'column', col)}
@@ -318,7 +332,7 @@
     {/each}
     <div class="corner"></div>
 
-    {#each indices as row (row)}
+    {#each rows as row (row)}
       <button
         class="track row"
         class:live={trackActive(0, 'row', row)}
@@ -340,7 +354,7 @@
         {/if}
       </button>
 
-      {#each indices as col (col)}
+      {#each cols as col (col)}
         {@const square = { row, col }}
         {@const key = squareKey(square)}
         {@const piece = pieceAt(game, square)}
@@ -351,6 +365,7 @@
           class:castle-square={slot !== null && game.castles[slot.owner][slot.index]}
           class:castle-razed={slot !== null && !game.castles[slot.owner][slot.index]}
           class:hilltop={isHilltop(game, square)}
+          class:wall={wallStands(game, square)}
           class:armed-siege={piece !== null &&
             piece.kind === 'trebuchet' &&
             isHilltop(game, square)}
@@ -381,6 +396,8 @@
           <span class="terrain">
             {#if slot && game.castles[slot.owner][slot.index]}
               <span class="castle"><TerrainIcon kind="castle" size={40} /></span>
+            {:else if wallStands(game, square)}
+              <span class="rampart"><TerrainIcon kind="wall" size={40} /></span>
             {:else if isHilltop(game, square)}
               <span class="hill"><TerrainIcon kind="hilltop" size={34} /></span>
             {/if}
@@ -419,7 +436,7 @@
     {/each}
 
     <div class="corner"></div>
-    {#each indices as col (col)}
+    {#each cols as col (col)}
       <button
         class="track column"
         class:live={trackActive(1, 'column', col)}
@@ -447,7 +464,9 @@
 
 <style>
   .board-frame {
-    --cell: clamp(34px, 8.4vmin, 72px);
+    /* Nine files wide and seven deep, so the cell has to answer to the
+       viewport's width as well as its height. */
+    --cell: clamp(26px, min(9vh, 6.2vw), 68px);
     --track: calc(var(--cell) * 0.72);
     display: inline-block;
     padding: 0.4rem;
@@ -455,7 +474,7 @@
 
   .grid {
     display: grid;
-    grid-template-columns: var(--track) repeat(7, var(--cell)) var(--track);
+    grid-template-columns: var(--track) repeat(9, var(--cell)) var(--track);
     grid-template-rows: var(--track) repeat(7, var(--cell)) var(--track);
   }
 
@@ -577,6 +596,17 @@
      the thing you are about to pick, as it is for a selected piece. */
   .square.line-preview {
     background: rgba(208, 115, 26, 0.2);
+  }
+
+  /* Neutral ground nobody owns: no piece may enter it while it stands, and any
+     ordinary piece breaks it in one shot. */
+  .square.wall {
+    background: var(--parchment-deep);
+  }
+
+  .rampart {
+    color: var(--umber-edge);
+    opacity: 0.9;
   }
 
   /* A razed castle takes a hilltop token; the hatch keeps what it was legible. */

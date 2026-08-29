@@ -7,19 +7,19 @@ import {
   lineName,
   squareName,
 } from './log'
-import { BOARD_SIZE } from './types'
+import { BOARD_COLS, BOARD_ROWS } from './types'
 import type { GameEvent, GameState, PieceKind, Square } from './types'
 
 describe('board coordinates', () => {
   it('names squares with files left to right and ranks top to bottom', () => {
     expect(squareName({ row: 0, col: 0 })).toBe('a7')
-    expect(squareName({ row: 6, col: 6 })).toBe('g1')
-    expect(squareName({ row: 3, col: 3 })).toBe('d4')
+    expect(squareName({ row: 6, col: 8 })).toBe('i1')
+    expect(squareName({ row: 3, col: 4 })).toBe('e4')
   })
 
   it('names a token line by the kind of line it rides', () => {
     expect(lineName('row', 0)).toBe('rank 7')
-    expect(lineName('column', 0)).toBe('file a')
+    expect(lineName('column', 8)).toBe('file i')
   })
 })
 
@@ -52,11 +52,28 @@ describe('describeEvent', () => {
       player: 0,
       token: 'row',
       kind: 'trebuchet',
-      from: { row: 3, col: 3 },
-      target: { row: 6, col: 0 },
+      from: { row: 3, col: 4 },
+      target: { row: 6, col: 1 },
       casualty: { type: 'castle' },
     }
-    expect(describeEvent(event)?.text).toBe('Trebuchet d4 destroys the castle on a1')
+    expect(describeEvent(event)?.text).toBe('Trebuchet e4 destroys the castle on b1')
+  })
+
+  it('names a broken wall by its square', () => {
+    const event: GameEvent = {
+      type: 'struck',
+      player: 1,
+      token: 'column',
+      kind: 'swordsman',
+      from: { row: 2, col: 3 },
+      target: { row: 3, col: 3 },
+      casualty: { type: 'wall' },
+    }
+    expect(describeEvent(event)).toEqual({
+      player: 1,
+      text: 'Swordsman d5 destroys the wall on d4',
+      grave: true,
+    })
   })
 
   it('records an attacker that declined its shot', () => {
@@ -116,8 +133,8 @@ describe('destroyedSquares', () => {
 
 /** A board with nothing on it but the pieces a test names. */
 function position(pieces: [Square, PieceKind, number][]): GameState {
-  const board = Array.from({ length: BOARD_SIZE }, () =>
-    Array.from({ length: BOARD_SIZE }, () => null),
+  const board = Array.from({ length: BOARD_ROWS }, () =>
+    Array.from({ length: BOARD_COLS }, () => null),
   ) as GameState['board']
   for (const [square, kind, owner] of pieces) board[square.row][square.col] = { kind, owner }
   return {
@@ -126,6 +143,7 @@ function position(pieces: [Square, PieceKind, number][]): GameState {
       [true, true, true],
       [true, true, true],
     ],
+    walls: [true, true, true, true],
     tokens: [
       [
         { line: 0, face: 'movement' },
@@ -155,9 +173,12 @@ describe('describeMoveOutcome', () => {
         from: { row: 0, col: 1 },
         to: { row: 1, col: 2 },
         threatenedPieces: [{ row: 1, col: 3 }],
-        threatenedCastles: [{ row: 6, col: 0 }],
+        threatenedCastles: [{ row: 6, col: 1 }],
+        threatenedWalls: [{ row: 3, col: 2 }],
       }),
-    ).toBe('b7 → c6, and your volley then bears on Swordsman d6 and the castle on a1.')
+    ).toBe(
+      'b7 → c6, and your volley then bears on Swordsman d6, the castle on b1 and the wall on c4.',
+    )
   })
 
   it('says only where the piece goes when nothing follows', () => {
@@ -167,6 +188,7 @@ describe('describeMoveOutcome', () => {
         to: { row: 1, col: 0 },
         threatenedPieces: [],
         threatenedCastles: [],
+        threatenedWalls: [],
       }),
     ).toBe('b7 → a6.')
   })
@@ -184,6 +206,7 @@ describe('describeSlideOutcome', () => {
         covered: [{ row: 2, col: 3 }],
         threatenedPieces: [{ row: 2, col: 3 }],
         threatenedCastles: [],
+        threatenedWalls: [],
       }),
     ).toBe(
       '1 piece on rank 5 could move; next turn the volley there bears on Archer d5, as the board stands.',
@@ -199,6 +222,7 @@ describe('describeSlideOutcome', () => {
         covered: [],
         threatenedPieces: [],
         threatenedCastles: [],
+        threatenedWalls: [],
       }),
     ).toBe(
       'Nothing on file f could move; next turn the volley there bears on nothing, as the board stands.',

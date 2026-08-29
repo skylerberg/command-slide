@@ -1,7 +1,15 @@
 // Turns engine events into the sentences shown in the sidebar.
 
-import { PIECE_NAMES, PLAYER_NAMES, pieceAt } from './types'
-import type { GameEvent, GameState, MoveOutcome, SlideOutcome, Square, TokenKind } from './types'
+import { BOARD_ROWS, FILE_LETTERS, PIECE_NAMES, PLAYER_NAMES, pieceAt } from './types'
+import type {
+  Casualty,
+  GameEvent,
+  GameState,
+  MoveOutcome,
+  SlideOutcome,
+  Square,
+  TokenKind,
+} from './types'
 
 export interface LogEntry {
   player: number
@@ -10,17 +18,28 @@ export interface LogEntry {
   grave?: boolean
 }
 
-/** Files run a-g left to right; ranks run 7-1 from the top row down. */
+/** Files run a-i left to right; ranks run 7-1 from the top row down. */
 export function squareName(square: Square): string {
-  return `${'abcdefg'[square.col]}${7 - square.row}`
+  return `${FILE_LETTERS[square.col]}${BOARD_ROWS - square.row}`
 }
 
 export function lineName(kind: TokenKind, line: number): string {
-  return kind === 'row' ? `rank ${7 - line}` : `file ${'abcdefg'[line]}`
+  return kind === 'row' ? `rank ${BOARD_ROWS - line}` : `file ${FILE_LETTERS[line]}`
 }
 
 function tokenName(kind: TokenKind): string {
   return kind === 'row' ? 'rank' : 'file'
+}
+
+function describeCasualty(casualty: Casualty, target: Square): string {
+  switch (casualty.type) {
+    case 'castle':
+      return `the castle on ${squareName(target)}`
+    case 'wall':
+      return `the wall on ${squareName(target)}`
+    case 'piece':
+      return `${PIECE_NAMES[casualty.piece.kind]} on ${squareName(target)}`
+  }
 }
 
 export function describeEvent(event: GameEvent): LogEntry | null {
@@ -46,10 +65,7 @@ export function describeEvent(event: GameEvent): LogEntry | null {
         text: `volleys along ${lineName(event.token, event.line)}`,
       }
     case 'struck': {
-      const victim =
-        event.casualty.type === 'castle'
-          ? `the castle on ${squareName(event.target)}`
-          : `${PIECE_NAMES[event.casualty.piece.kind]} on ${squareName(event.target)}`
+      const victim = describeCasualty(event.casualty, event.target)
       return {
         player: event.player,
         text: `${PIECE_NAMES[event.kind]} ${squareName(event.from)} destroys ${victim}`,
@@ -87,20 +103,24 @@ function joinList(items: string[]): string {
 }
 
 /** Names what stands on each square, for a sentence about shooting at it. */
-function targetNames(state: GameState, pieces: Square[], castles: Square[]): string[] {
+function targetNames(
+  state: GameState,
+  reach: { threatenedPieces: Square[]; threatenedCastles: Square[]; threatenedWalls: Square[] },
+): string[] {
   return [
-    ...pieces.map((square) => {
+    ...reach.threatenedPieces.map((square) => {
       const piece = pieceAt(state, square)
       return piece ? `${PIECE_NAMES[piece.kind]} ${squareName(square)}` : squareName(square)
     }),
-    ...castles.map((square) => `the castle on ${squareName(square)}`),
+    ...reach.threatenedCastles.map((square) => `the castle on ${squareName(square)}`),
+    ...reach.threatenedWalls.map((square) => `the wall on ${squareName(square)}`),
   ]
 }
 
 /** The sentence under the board while a destination is under the cursor. */
 export function describeMoveOutcome(state: GameState, outcome: MoveOutcome): string {
   const journey = `${squareName(outcome.from)} → ${squareName(outcome.to)}`
-  const targets = targetNames(state, outcome.threatenedPieces, outcome.threatenedCastles)
+  const targets = targetNames(state, outcome)
   if (targets.length === 0) return `${journey}.`
   return `${journey}, and your volley then bears on ${joinList(targets)}.`
 }
@@ -112,7 +132,7 @@ export function describeSlideOutcome(state: GameState, outcome: SlideOutcome): s
     outcome.movers.length === 0
       ? `Nothing on ${where} could move`
       : `${outcome.movers.length} piece${outcome.movers.length === 1 ? '' : 's'} on ${where} could move`
-  const targets = targetNames(state, outcome.threatenedPieces, outcome.threatenedCastles)
+  const targets = targetNames(state, outcome)
   const volley =
     targets.length === 0
       ? 'next turn the volley there bears on nothing, as the board stands'

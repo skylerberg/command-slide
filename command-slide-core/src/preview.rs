@@ -124,6 +124,7 @@ pub struct MoveOutcome {
     pub to: Square,
     pub threatened_pieces: Vec<Square>,
     pub threatened_castles: Vec<Square>,
+    pub threatened_walls: Vec<Square>,
 }
 
 pub fn move_outcomes(state: &GameState) -> Vec<MoveOutcome> {
@@ -139,12 +140,13 @@ pub fn move_outcomes(state: &GameState) -> Vec<MoveOutcome> {
             };
             let mut next = *state;
             apply(&mut next, &choice);
-            let (threatened_pieces, threatened_castles) = pending_threat(&next, player);
+            let threat = pending_threat(&next, player);
             Some(MoveOutcome {
                 from,
                 to,
-                threatened_pieces,
-                threatened_castles,
+                threatened_pieces: threat.0,
+                threatened_castles: threat.1,
+                threatened_walls: threat.2,
             })
         })
         .collect()
@@ -152,8 +154,8 @@ pub fn move_outcomes(state: &GameState) -> Vec<MoveOutcome> {
 
 /// What `player`'s volley still to come bears on. Empty once it has fired, or
 /// once the turn has passed on: there is then nothing left to set up.
-fn pending_threat(state: &GameState, player: u8) -> (Vec<Square>, Vec<Square>) {
-    let none = (Vec::new(), Vec::new());
+fn pending_threat(state: &GameState, player: u8) -> (Vec<Square>, Vec<Square>, Vec<Square>) {
+    let none = (Vec::new(), Vec::new(), Vec::new());
     if state.current_player != player || state.pending_len == 0 {
         return none;
     }
@@ -165,6 +167,7 @@ fn pending_threat(state: &GameState, player: u8) -> (Vec<Square>, Vec<Square>) {
     (
         AttackReach::squares(reach.pieces).collect(),
         threatened_castles(&reach, GameState::opponent(player)),
+        threatened_walls(&reach),
     )
 }
 
@@ -187,6 +190,8 @@ pub struct SlideOutcome {
     pub threatened_pieces: Vec<Square>,
     /// Enemy castles that reach takes in right now.
     pub threatened_castles: Vec<Square>,
+    /// Walls that reach takes in right now.
+    pub threatened_walls: Vec<Square>,
 }
 
 pub fn slide_outcomes(state: &GameState) -> Vec<SlideOutcome> {
@@ -212,6 +217,7 @@ pub fn slide_outcomes(state: &GameState) -> Vec<SlideOutcome> {
                 covered: AttackReach::squares(reach.covered).collect(),
                 threatened_pieces: AttackReach::squares(reach.pieces).collect(),
                 threatened_castles: threatened_castles(&reach, GameState::opponent(player)),
+                threatened_walls: threatened_walls(&reach),
             })
         })
         .collect()
@@ -272,6 +278,16 @@ fn threatened_castles(reach: &AttackReach, enemy: u8) -> Vec<Square> {
         .collect()
 }
 
+fn threatened_walls(reach: &AttackReach) -> Vec<Square> {
+    reach
+        .walls
+        .iter()
+        .enumerate()
+        .filter(|(_, &hit)| hit)
+        .map(|(index, _)| WALL_SQUARES[index])
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,7 +297,7 @@ mod tests {
     /// position it means. Castles and tokens are left as dealt.
     fn empty_board() -> GameState {
         let mut state = initial_state();
-        state.board = [[None; BOARD_SIZE]; BOARD_SIZE];
+        state.board = [[None; BOARD_COLS]; BOARD_ROWS];
         state
     }
 
@@ -289,13 +305,14 @@ mod tests {
         state.set_piece(Square::new(row, col), Some(Piece { kind, owner }));
     }
 
-    /// Both sides keep their siege engines out of the way, so no test position
-    /// is accidentally already won.
+    /// Both sides keep their siege engines out of the way, on the outer files
+    /// that carry no terrain, so no test position is accidentally already won
+    /// and no ram is accidentally beside a castle.
     fn spare_engines(state: &mut GameState) {
-        place(state, 5, 5, PieceKind::Trebuchet, 0);
-        place(state, 5, 4, PieceKind::BatteringRam, 0);
-        place(state, 6, 6, PieceKind::Trebuchet, 1);
-        place(state, 6, 5, PieceKind::BatteringRam, 1);
+        place(state, 5, 0, PieceKind::Trebuchet, 0);
+        place(state, 5, 8, PieceKind::BatteringRam, 0);
+        place(state, 6, 0, PieceKind::Trebuchet, 1);
+        place(state, 6, 8, PieceKind::BatteringRam, 1);
     }
 
     fn token(state: &mut GameState, player: u8, kind: TokenKind, line: u8, face: TokenFace) {
@@ -360,8 +377,8 @@ mod tests {
     fn coverage_includes_squares_no_one_is_standing_on() {
         let mut state = empty_board();
         spare_engines(&mut state);
-        place(&mut state, 3, 2, PieceKind::Swordsman, 0);
-        token(&mut state, 0, TokenKind::Row, 3, TokenFace::Attack);
+        place(&mut state, 2, 4, PieceKind::Swordsman, 0);
+        token(&mut state, 0, TokenKind::Row, 2, TokenFace::Attack);
 
         let reach = attack_preview(&state, 0, TokenKind::Row);
         let covered: Vec<Square> = AttackReach::squares(reach.covered).collect();
@@ -369,10 +386,10 @@ mod tests {
         assert_eq!(
             covered,
             vec![
-                Square::new(2, 2),
-                Square::new(3, 1),
-                Square::new(3, 3),
-                Square::new(4, 2),
+                Square::new(1, 4),
+                Square::new(2, 3),
+                Square::new(2, 5),
+                Square::new(3, 4),
             ],
         );
         // Nothing is standing in it, so the volley has no shot to take.
@@ -465,18 +482,18 @@ mod tests {
         let siege = at(5);
         assert_eq!(siege.covered, Vec::<Square>::new());
         assert_eq!(siege.threatened_castles, Vec::<Square>::new());
-        assert_eq!(siege.movers, vec![Square::new(5, 4), Square::new(5, 5)]);
+        assert_eq!(siege.movers, vec![Square::new(5, 0), Square::new(5, 8)]);
     }
 
     #[test]
     fn pending_attackers_lists_the_shots_still_to_take() {
         let mut state = empty_board();
         spare_engines(&mut state);
-        place(&mut state, 3, 1, PieceKind::Swordsman, 0);
-        place(&mut state, 3, 4, PieceKind::Swordsman, 0);
-        place(&mut state, 3, 2, PieceKind::Swordsman, 1);
-        place(&mut state, 3, 5, PieceKind::Swordsman, 1);
-        token(&mut state, 0, TokenKind::Row, 3, TokenFace::Attack);
+        place(&mut state, 2, 1, PieceKind::Swordsman, 0);
+        place(&mut state, 2, 4, PieceKind::Swordsman, 0);
+        place(&mut state, 2, 2, PieceKind::Swordsman, 1);
+        place(&mut state, 2, 5, PieceKind::Swordsman, 1);
+        token(&mut state, 0, TokenKind::Row, 2, TokenFace::Attack);
         state.current_player = 0;
         state.pending = [TokenKind::Row, TokenKind::Column];
         state.pending_len = 1;
@@ -486,7 +503,7 @@ mod tests {
         assert_eq!(state.phase, Phase::Attack);
         assert_eq!(
             pending_attackers(&state),
-            vec![Square::new(3, 1), Square::new(3, 4)],
+            vec![Square::new(2, 1), Square::new(2, 4)],
         );
 
         // Once the first has fired, only the second is still to be asked.
@@ -495,7 +512,7 @@ mod tests {
             .find(|choice| matches!(choice, Choice::Attack { .. }))
             .expect("the first attacker has a shot");
         apply(&mut state, &shot);
-        assert_eq!(pending_attackers(&state), vec![Square::new(3, 4)]);
+        assert_eq!(pending_attackers(&state), vec![Square::new(2, 4)]);
     }
 
     /// The shortcut in `order_matters` claims to be exact, not conservative.
