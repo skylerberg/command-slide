@@ -300,7 +300,7 @@ pub struct AiConfig {
 impl Default for AiConfig {
     fn default() -> Self {
         Self {
-            iterations: 20_000,
+            iterations: 50_000,
             time_limit_ms: None,
             exploration_constant: 0.75,
             context: SearchContext::default(),
