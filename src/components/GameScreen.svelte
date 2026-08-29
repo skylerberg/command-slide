@@ -511,6 +511,9 @@
     display: grid;
     justify-items: center;
     gap: 0.8rem;
+    /* The board sizes its cell off this column's width, so the sidebar's
+       presence or absence is the only thing that has to be measured. */
+    container-type: inline-size;
   }
 
   .prompt {
@@ -668,6 +671,22 @@
 
     .side :global(.log) {
       grid-column: 1 / -1;
+    }
+  }
+
+  /* On a phone every millimetre of padding comes straight off the board. */
+  @media (max-width: 560px) {
+    .bar {
+      padding: 0.6rem 0.7rem;
+    }
+
+    .body {
+      gap: 0.8rem;
+      padding: 0.6rem;
+    }
+
+    .prompt {
+      padding: 0.6rem 0.7rem;
     }
   }
 </style>
