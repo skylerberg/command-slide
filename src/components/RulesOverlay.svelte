@@ -78,15 +78,15 @@
       <h3>The faces</h3>
       <div class="faces">
         <div>
-          <span class="face move"><TokenIcon kind="row" face="movement" size={26} /></span>
+          <span><TokenIcon kind="row" face="movement" size={26} /></span>
           <span>Move one piece from that <strong>rank</strong>, like a rook.</span>
         </div>
         <div>
-          <span class="face move"><TokenIcon kind="column" face="movement" size={26} /></span>
+          <span><TokenIcon kind="column" face="movement" size={26} /></span>
           <span>Move one piece from that <strong>file</strong>, like a bishop.</span>
         </div>
         <div>
-          <span class="face attack"><TokenIcon kind="row" face="attack" size={26} /></span>
+          <span><TokenIcon kind="row" face="attack" size={26} /></span>
           <span>Every piece of yours on that line attacks at once. Attackers do not move.</span>
         </div>
       </div>
@@ -110,7 +110,7 @@
                     class:self={drow === 0 && dcol === 0}
                   >
                     {#if drow === 0 && dcol === 0}
-                      <PieceIcon {kind} size={16} />
+                      <PieceIcon {kind} size={20} />
                     {/if}
                   </span>
                 {/each}
@@ -214,14 +214,6 @@
     gap: 0.6rem;
   }
 
-  .face.move {
-    color: var(--azure);
-  }
-
-  .face.attack {
-    color: var(--crimson);
-  }
-
   .patterns {
     display: flex;
     flex-wrap: wrap;
@@ -236,8 +228,8 @@
 
   .mini {
     display: grid;
-    grid-template-columns: repeat(5, 20px);
-    grid-template-rows: repeat(5, 20px);
+    grid-template-columns: repeat(5, 24px);
+    grid-template-rows: repeat(5, 24px);
   }
 
   .cell {
@@ -252,7 +244,6 @@
 
   .cell.self {
     background: var(--castle-tint);
-    color: var(--ink);
   }
 
   figcaption {
@@ -274,9 +265,5 @@
     grid-template-columns: 1.6rem 1fr;
     gap: 0.6rem;
     align-items: start;
-  }
-
-  .engine {
-    color: var(--ink-soft);
   }
 </style>

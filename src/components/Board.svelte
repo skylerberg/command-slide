@@ -164,7 +164,7 @@
       >
         {#if trackHasToken(0, 'column', col)}
           <span class="token ivory">
-            <TokenIcon kind="column" face={tokenOf(game, 0, 'column').face} size={22} />
+            <TokenIcon kind="column" face={tokenOf(game, 0, 'column').face} owner={0} />
           </span>
         {:else}
           <span class="slot"></span>
@@ -184,7 +184,7 @@
       >
         {#if trackHasToken(0, 'row', row)}
           <span class="token ivory">
-            <TokenIcon kind="row" face={tokenOf(game, 0, 'row').face} size={22} />
+            <TokenIcon kind="row" face={tokenOf(game, 0, 'row').face} owner={0} />
           </span>
         {:else}
           <span class="slot"></span>
@@ -233,7 +233,7 @@
 
           {#if piece}
             <span class={`token piece ${piece.owner === 0 ? 'ivory' : 'umber'}`}>
-              <PieceIcon kind={piece.kind} size={24} />
+              <PieceIcon kind={piece.kind} owner={piece.owner} />
             </span>
           {/if}
 
@@ -251,7 +251,7 @@
       >
         {#if trackHasToken(1, 'row', row)}
           <span class="token umber">
-            <TokenIcon kind="row" face={tokenOf(game, 1, 'row').face} size={22} />
+            <TokenIcon kind="row" face={tokenOf(game, 1, 'row').face} owner={1} />
           </span>
         {:else}
           <span class="slot"></span>
@@ -271,7 +271,7 @@
       >
         {#if trackHasToken(1, 'column', col)}
           <span class="token umber">
-            <TokenIcon kind="column" face={tokenOf(game, 1, 'column').face} size={22} />
+            <TokenIcon kind="column" face={tokenOf(game, 1, 'column').face} owner={1} />
           </span>
         {:else}
           <span class="slot"></span>
@@ -324,6 +324,12 @@
     opacity: 0.5;
   }
 
+  /* A token never slides to the line it already holds, so its own track is
+     always disabled. The art still has to read at full strength. */
+  .track:disabled {
+    opacity: 1;
+  }
+
   .track.live {
     cursor: pointer;
   }
@@ -350,26 +356,18 @@
     box-shadow: var(--shadow-soft);
   }
 
+  /* The art is a disc of the owner's colour, edge to edge. The matching
+     background only guards the seam where the CSS circle meets the drawn one. */
   .token.ivory {
     background: var(--ivory);
-    border: 1.5px solid var(--ivory-edge);
-    color: var(--umber);
   }
 
   .token.umber {
     background: var(--umber);
-    border: 1.5px solid var(--umber-edge);
-    color: var(--ivory);
   }
 
   .track .token {
     width: 84%;
-  }
-
-  /* The token's face is what the colour is telling you, so it overrides the
-     owner's palette for the icon itself. */
-  .track .token :global(svg) {
-    color: inherit;
   }
 
   .square {

@@ -35,7 +35,7 @@
 <div class="menu">
   <div class="panel card">
     <div class="crest">
-      <PieceIcon kind="trebuchet" size={44} />
+      <PieceIcon kind="trebuchet" size={56} />
     </div>
     <h1>Command Slide</h1>
     <p class="tagline">
@@ -121,7 +121,6 @@
   .crest {
     display: grid;
     place-items: center;
-    color: var(--ink-soft);
   }
 
   h1 {

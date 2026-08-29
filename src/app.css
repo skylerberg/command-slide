@@ -9,9 +9,10 @@
   --ink-soft: #6d5a3e;
   --ink-faint: #a08f74;
 
-  --ivory: #f6f0d8;
+  /* The two ink colours the piece art is printed in. */
+  --ivory: #fcfbd6;
   --ivory-edge: #b9a97e;
-  --umber: #3d2b16;
+  --umber: #3b2313;
   --umber-edge: #241708;
 
   --gold: #b98f2e;

@@ -24,6 +24,7 @@ Rust workspace plus a Svelte frontend:
   - `src/engine/` — wasm loader and wrappers
   - `src/ai/` — the Web Worker the search runs in, and its controller
   - `src/components/` — board, panels, rules sheet, menu
+  - `src/assets/` — the designer's piece and token art, one PNG per side
   - `src/wasm-pkg/` — generated wasm output (gitignored)
 
 ## Build & Run Commands
