@@ -517,8 +517,8 @@
   }
 
   .track.live .slot {
-    width: 60%;
-    height: 60%;
+    width: calc(var(--track) * 0.6);
+    height: calc(var(--track) * 0.6);
     background: transparent;
     border: 2px dashed var(--gold);
     opacity: 0.85;
@@ -548,8 +548,10 @@
     background: var(--umber);
   }
 
+  /* The track cells are oblong, so a percentage would size the token off the
+     long side and spill it onto the board. */
   .track .token {
-    width: 84%;
+    width: calc(var(--track) * 0.84);
   }
 
   .square {
