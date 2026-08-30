@@ -88,6 +88,12 @@ enum Command {
         seed_params: Option<std::path::PathBuf>,
         #[arg(long, default_value = "tuning")]
         output: std::path::PathBuf,
+        /// Continue the run whose checkpoint is in --output, rather than
+        /// starting one. Pass the same --seed-params the original run used:
+        /// fitness is a win rate against those weights, so resuming against
+        /// different ones is refused.
+        #[arg(long)]
+        resume: bool,
         #[arg(long, default_value_t = 1)]
         seed: u64,
     },
@@ -498,6 +504,7 @@ fn main() {
             reseed,
             seed_params,
             output,
+            resume,
             seed,
         } => tune::run(&tune::TuneArgs {
             strategy,
@@ -511,6 +518,7 @@ fn main() {
             seed_params,
             output,
             threads: cli.threads,
+            resume,
         }),
         Command::Replay { iterations, seed } => replay(iterations, seed),
         Command::Bench { iterations } => {
