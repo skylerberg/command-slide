@@ -7,6 +7,7 @@
     BOARD_COLS,
     BOARD_ROWS,
     FILE_LETTERS,
+    PLAYER_NAMES,
     TOKEN_KINDS,
     attackTargets,
     castleSlotAt,
@@ -42,6 +43,8 @@
     pendingAttackers: Square[]
     /** The seat the human is playing, or null when watching. */
     viewer: number | null
+    /** The side along the bottom edge, facing the other across the board. */
+    orientation: number
     showThreats: boolean
     /** Whether to look a step ahead: what a move or a slide would lead to. */
     showOutcomes: boolean
@@ -60,6 +63,7 @@
     slideOutcomes,
     pendingAttackers,
     viewer,
+    orientation,
     showThreats,
     showOutcomes,
     destroyed,
@@ -71,8 +75,20 @@
   let hovered: Square | null = $state(null)
   let hoveredSlide: SlideOutcome | null = $state(null)
 
-  const rows = Array.from({ length: BOARD_ROWS }, (_, i) => i)
-  const cols = Array.from({ length: BOARD_COLS }, (_, i) => i)
+  /** Whichever side is drawn nearest holds the bottom and right tracks, so the
+      four of them go by the edge they sit on rather than by whose they are. */
+  let near = $derived(orientation)
+  let far = $derived(1 - orientation)
+
+  /** A half turn, so ranks and files both run backwards. Reordering the indices
+      rather than rotating the grid keeps coordinates and piece art upright. */
+  let rows = $derived(drawOrder(BOARD_ROWS))
+  let cols = $derived(drawOrder(BOARD_COLS))
+
+  function drawOrder(length: number): number[] {
+    const line = Array.from({ length }, (_, i) => i)
+    return orientation === 0 ? line.reverse() : line
+  }
 
   let moves = $derived(legalChoices.filter((choice) => choice.type === 'move'))
 
@@ -311,19 +327,19 @@
     {#each cols as col (col)}
       <button
         class="track column"
-        class:live={trackActive(0, 'column', col)}
-        class:occupied={trackHasToken(0, 'column', col)}
-        disabled={!trackActive(0, 'column', col)}
+        class:live={trackActive(far, 'column', col)}
+        class:occupied={trackHasToken(far, 'column', col)}
+        disabled={!trackActive(far, 'column', col)}
         onclick={() => clickTrack('column', col)}
         onmouseenter={() => enterTrack('column', col)}
         onmouseleave={leaveTrack}
         onfocus={() => enterTrack('column', col)}
         onblur={leaveTrack}
-        aria-label={`Ivory column token to column ${col + 1}`}
+        aria-label={`${PLAYER_NAMES[far]} column token to column ${col + 1}`}
       >
-        {#if trackHasToken(0, 'column', col)}
-          <span class="token ivory">
-            <TokenIcon kind="column" face={tokenOf(game, 0, 'column').face} owner={0} />
+        {#if trackHasToken(far, 'column', col)}
+          <span class={`token ${far === 0 ? 'ivory' : 'umber'}`}>
+            <TokenIcon kind="column" face={tokenOf(game, far, 'column').face} owner={far} />
           </span>
         {:else}
           <span class="slot"></span>
@@ -335,19 +351,19 @@
     {#each rows as row (row)}
       <button
         class="track row"
-        class:live={trackActive(0, 'row', row)}
-        class:occupied={trackHasToken(0, 'row', row)}
-        disabled={!trackActive(0, 'row', row)}
+        class:live={trackActive(far, 'row', row)}
+        class:occupied={trackHasToken(far, 'row', row)}
+        disabled={!trackActive(far, 'row', row)}
         onclick={() => clickTrack('row', row)}
         onmouseenter={() => enterTrack('row', row)}
         onmouseleave={leaveTrack}
         onfocus={() => enterTrack('row', row)}
         onblur={leaveTrack}
-        aria-label={`Ivory row token to row ${row + 1}`}
+        aria-label={`${PLAYER_NAMES[far]} row token to row ${row + 1}`}
       >
-        {#if trackHasToken(0, 'row', row)}
-          <span class="token ivory">
-            <TokenIcon kind="row" face={tokenOf(game, 0, 'row').face} owner={0} />
+        {#if trackHasToken(far, 'row', row)}
+          <span class={`token ${far === 0 ? 'ivory' : 'umber'}`}>
+            <TokenIcon kind="row" face={tokenOf(game, far, 'row').face} owner={far} />
           </span>
         {:else}
           <span class="slot"></span>
@@ -415,19 +431,19 @@
 
       <button
         class="track row"
-        class:live={trackActive(1, 'row', row)}
-        class:occupied={trackHasToken(1, 'row', row)}
-        disabled={!trackActive(1, 'row', row)}
+        class:live={trackActive(near, 'row', row)}
+        class:occupied={trackHasToken(near, 'row', row)}
+        disabled={!trackActive(near, 'row', row)}
         onclick={() => clickTrack('row', row)}
         onmouseenter={() => enterTrack('row', row)}
         onmouseleave={leaveTrack}
         onfocus={() => enterTrack('row', row)}
         onblur={leaveTrack}
-        aria-label={`Umber row token to row ${row + 1}`}
+        aria-label={`${PLAYER_NAMES[near]} row token to row ${row + 1}`}
       >
-        {#if trackHasToken(1, 'row', row)}
-          <span class="token umber">
-            <TokenIcon kind="row" face={tokenOf(game, 1, 'row').face} owner={1} />
+        {#if trackHasToken(near, 'row', row)}
+          <span class={`token ${near === 0 ? 'ivory' : 'umber'}`}>
+            <TokenIcon kind="row" face={tokenOf(game, near, 'row').face} owner={near} />
           </span>
         {:else}
           <span class="slot"></span>
@@ -439,19 +455,19 @@
     {#each cols as col (col)}
       <button
         class="track column"
-        class:live={trackActive(1, 'column', col)}
-        class:occupied={trackHasToken(1, 'column', col)}
-        disabled={!trackActive(1, 'column', col)}
+        class:live={trackActive(near, 'column', col)}
+        class:occupied={trackHasToken(near, 'column', col)}
+        disabled={!trackActive(near, 'column', col)}
         onclick={() => clickTrack('column', col)}
         onmouseenter={() => enterTrack('column', col)}
         onmouseleave={leaveTrack}
         onfocus={() => enterTrack('column', col)}
         onblur={leaveTrack}
-        aria-label={`Umber column token to column ${col + 1}`}
+        aria-label={`${PLAYER_NAMES[near]} column token to column ${col + 1}`}
       >
-        {#if trackHasToken(1, 'column', col)}
-          <span class="token umber">
-            <TokenIcon kind="column" face={tokenOf(game, 1, 'column').face} owner={1} />
+        {#if trackHasToken(near, 'column', col)}
+          <span class={`token ${near === 0 ? 'ivory' : 'umber'}`}>
+            <TokenIcon kind="column" face={tokenOf(game, near, 'column').face} owner={near} />
           </span>
         {:else}
           <span class="slot"></span>
