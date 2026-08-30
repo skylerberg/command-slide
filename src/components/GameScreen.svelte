@@ -97,6 +97,12 @@
   // the opponent thinks; a hot-seat game follows whoever is to move.
   let viewer = $derived(humanSeats.length === 1 ? humanSeats[0] : game.currentPlayer)
 
+  /** The side drawn nearest: yours, when exactly one seat is yours. Hot-seat
+      and watched games have no such side and keep the rules sheet's view. Fixed
+      for the game either way; a board that turned each turn would cost every
+      player the picture of the position they had built. */
+  let orientation = $derived(humanSeats.length === 1 ? humanSeats[0] : 1)
+
   let volley = $derived.by(() => {
     const result: Record<number, AttackPreview | null> = { 0: null, 1: null }
     for (const player of [0, 1]) {
@@ -350,20 +356,15 @@
 
   <div class="body">
     <aside class="side">
-      <PlayerPanel
-        {game}
-        player={0}
-        seat={setup.seats[0] === 'ai' ? 'Machine' : 'You'}
-        active={game.currentPlayer === 0 && !game.outcome}
-        thinking={thinking && game.currentPlayer === 0}
-      />
-      <PlayerPanel
-        {game}
-        player={1}
-        seat={setup.seats[1] === 'ai' ? 'Machine' : 'You'}
-        active={game.currentPlayer === 1 && !game.outcome}
-        thinking={thinking && game.currentPlayer === 1}
-      />
+      {#each [1 - orientation, orientation] as player (player)}
+        <PlayerPanel
+          {game}
+          {player}
+          seat={setup.seats[player] === 'ai' ? 'Machine' : 'You'}
+          active={game.currentPlayer === player && !game.outcome}
+          thinking={thinking && game.currentPlayer === player}
+        />
+      {/each}
       <EventLog {entries} />
     </aside>
 
@@ -376,6 +377,7 @@
         slideOutcomes={slides}
         pendingAttackers={attackers}
         {viewer}
+        {orientation}
         {showThreats}
         {showOutcomes}
         {destroyed}
