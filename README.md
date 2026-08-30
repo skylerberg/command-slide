@@ -124,6 +124,21 @@ difference is linear in the weights, so multiplying every weight *and* `scale`
 by the same constant gives a bit-identical evaluation. Tuning both ends of that
 family would spend games wandering a direction that cannot change a game.
 
+**A run is resumable.** Every generation writes `tuning/checkpoint.json`
+alongside its parameters, through a temporary file and a rename so that a kill
+landing mid-write cannot destroy the state it exists to protect. Continue with
+the same command plus `--resume`:
+
+```sh
+pnpm run run-games -- --threads 10 tune --generations 100 --resume
+```
+
+Pass the same `--seed-params` the original run used. Fitness is a win rate
+*against those weights*, so resuming against different ones — reaching for the
+previous run's output is the natural mistake — would restart the scale at even
+money and make every number after the resume incomparable with every number
+before it. That is refused rather than allowed to happen quietly.
+
 **A run's reported best is biased upward.** It is a maximum over noisy
 measurements, so the luckiest candidate wins ties it would lose on a rerun.
 Confirm it before adopting it, at the budget the game actually ships:

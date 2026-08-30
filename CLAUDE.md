@@ -64,7 +64,8 @@ Rust workspace plus a Svelte frontend:
   `mcts-tune` crate. `command-slide-runner/src/tune.rs` holds the gene mapping;
   it lives in the runner, not the core, because `mcts-tune` uses threads and the
   core compiles to wasm. `scale` is pinned — it is redundant with the weights it
-  divides.
+  divides. `--resume` continues from `<output>/checkpoint.json`; pass the same
+  `--seed-params`, since fitness is a win rate against those weights.
 
 ## Testing
 

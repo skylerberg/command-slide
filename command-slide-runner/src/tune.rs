@@ -21,7 +21,7 @@ use command_slide_core::types::GameState;
 use command_slide_core::{initial_state, EvalParams};
 use mcts::Config;
 use mcts_tune::{
-    CmaEs, CmaParams, Evaluation, Ga, GaParams, Match, Optimizer, Tunable, TuneConfig,
+    Checkpoint, CmaEs, CmaParams, Evaluation, Ga, GaParams, Match, Optimizer, Tunable, TuneConfig,
 };
 
 /// The genes, in order. `scale` is deliberately absent.
@@ -199,6 +199,8 @@ pub struct TuneArgs {
     pub seed_params: Option<PathBuf>,
     pub output: PathBuf,
     pub threads: usize,
+    /// Continue the run whose checkpoint sits in `output`.
+    pub resume: bool,
 }
 
 pub fn load_params(path: &Path) -> EvalParams {
@@ -214,12 +216,47 @@ fn write_params(path: &Path, params: &EvalParams) {
         .unwrap_or_else(|error| panic!("cannot write {}: {error}", path.display()));
 }
 
+/// Write through a temporary file and rename over the target.
+///
+/// The checkpoint is rewritten every generation, and the reason to checkpoint at
+/// all is that the run gets killed. A kill landing inside a plain write leaves a
+/// half-written file where the resume state used to be — the one moment the
+/// feature exists for is the one moment it would fail. Rename is atomic within a
+/// directory, so what is on disk is always either the previous generation's or
+/// this one's.
+fn write_atomically(path: &Path, contents: &str) {
+    let scratch = path.with_extension("tmp");
+    fs::write(&scratch, contents)
+        .unwrap_or_else(|error| panic!("cannot write {}: {error}", scratch.display()));
+    fs::rename(&scratch, path)
+        .unwrap_or_else(|error| panic!("cannot replace {}: {error}", path.display()));
+}
+
+fn checkpoint_path(output: &Path) -> PathBuf {
+    output.join("checkpoint.json")
+}
+
+fn load_checkpoint(path: &Path) -> Checkpoint {
+    let text = fs::read_to_string(path).unwrap_or_else(|error| {
+        panic!(
+            "cannot read {}: {error}\nThere is nothing to resume from; drop --resume to start a run.",
+            path.display()
+        )
+    });
+    serde_json::from_str::<Checkpoint>(&text)
+        .unwrap_or_else(|error| panic!("cannot parse {}: {error}", path.display()))
+}
+
 pub fn run(args: &TuneArgs) {
     let base = args
         .seed_params
         .as_deref()
         .map(load_params)
         .unwrap_or_default();
+
+    let resume = args
+        .resume
+        .then(|| load_checkpoint(&checkpoint_path(&args.output)));
 
     fs::create_dir_all(&args.output)
         .unwrap_or_else(|error| panic!("cannot create {}: {error}", args.output.display()));
@@ -250,12 +287,20 @@ pub fn run(args: &TuneArgs) {
     };
 
     let population = optimizer.population();
-    let total_games = population * args.games_per_eval * args.generations;
+    let done = resume.as_ref().map_or(0, |c| c.generations_done);
+    if let Some(checkpoint) = &resume {
+        println!(
+            "resuming after generation {} ({} games already played, best {:.4})",
+            checkpoint.generations_done, checkpoint.games, checkpoint.best_fitness,
+        );
+    }
+    let total_games =
+        population * args.games_per_eval * (args.generations - done.min(args.generations));
     println!(
-        "{} over {} genes: {} generations x {} candidates x {} games = {} games",
+        "{} over {} genes: {} generations x {} candidates x {} games = {} games remaining",
         optimizer.name(),
         GENES.len(),
-        args.generations,
+        args.generations - done.min(args.generations),
         population,
         args.games_per_eval,
         total_games,
@@ -272,7 +317,14 @@ pub fn run(args: &TuneArgs) {
     // only the best parameters per generation — and not the numbers behind them
     // — leaves no way to tell afterwards whether a run climbed or wandered.
     let log_path = args.output.join("history.jsonl");
-    let mut history = String::new();
+    // Reloaded rather than started fresh: the log is rewritten whole each
+    // generation, so a resumed run that began from an empty string would
+    // silently truncate away everything before the interruption.
+    let mut history = if args.resume {
+        fs::read_to_string(&log_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
 
     let report = mcts_tune::run(
         &arena,
@@ -286,6 +338,7 @@ pub fn run(args: &TuneArgs) {
             },
             reseed_each_generation: args.reseed_each_generation,
         },
+        resume.as_ref(),
         |generation| {
             let best = seed_weights.with_genes(generation.best_genes).0;
             write_params(
@@ -306,7 +359,11 @@ pub fn run(args: &TuneArgs) {
                 generation.games,
                 generation.elapsed.as_secs_f64(),
             ));
-            fs::write(&log_path, &history).expect("cannot write the history log");
+            write_atomically(&log_path, &history);
+            write_atomically(
+                &checkpoint_path(&args.output),
+                &serde_json::to_string(&generation.checkpoint).expect("a checkpoint serializes"),
+            );
 
             println!(
                 "gen {:>3}: best {:.4}  mean {:.4}  worst {:.4}  incumbent {:.4}  {:.1}s",
@@ -319,6 +376,14 @@ pub fn run(args: &TuneArgs) {
             );
         },
     );
+
+    let report = match report {
+        Ok(report) => report,
+        Err(error) => {
+            eprintln!("cannot resume: {error}");
+            std::process::exit(1);
+        }
+    };
 
     let best = seed_weights.with_genes(&report.best_genes).0;
     let final_path = args.output.join("best.json");
