@@ -132,6 +132,8 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "command-slide-core",
+ "mcts",
+ "mcts-tune",
  "serde",
  "serde_json",
  "wyrand",
@@ -228,11 +230,21 @@ dependencies = [
 [[package]]
 name = "mcts"
 version = "0.4.0"
-source = "git+https://github.com/skylerberg/monte_carlo?rev=624f924d47387e1f55e4f16bb5ac4e4dd9abdc09#624f924d47387e1f55e4f16bb5ac4e4dd9abdc09"
+source = "git+https://github.com/skylerberg/monte_carlo?rev=6e048ebfdc0820081d8206de367a4de428e3ac4c#6e048ebfdc0820081d8206de367a4de428e3ac4c"
 dependencies = [
  "hashbrown",
  "rand_core",
  "rustc-hash",
+]
+
+[[package]]
+name = "mcts-tune"
+version = "0.1.0"
+source = "git+https://github.com/skylerberg/monte_carlo?rev=6e048ebfdc0820081d8206de367a4de428e3ac4c#6e048ebfdc0820081d8206de367a4de428e3ac4c"
+dependencies = [
+ "mcts",
+ "rand_core",
+ "wyrand",
 ]
 
 [[package]]

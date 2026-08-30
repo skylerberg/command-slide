@@ -5,3 +5,6 @@ command-slide-wasm/target/
 src/wasm-pkg/
 *.cpuprofile
 .DS_Store
+
+# Tuning run output: parameter checkpoints and fitness history.
+/tuning/
