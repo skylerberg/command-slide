@@ -66,6 +66,9 @@ Rust workspace plus a Svelte frontend:
   core compiles to wasm. `scale` is pinned — it is redundant with the weights it
   divides. `--resume` continues from `<output>/checkpoint.json`; pass the same
   `--seed-params`, since fitness is a win rate against those weights.
+  `--field round-robin` measures candidates against each other instead of a
+  fixed baseline, which is what stops a long run saturating; fitness is then
+  relative and cannot be read as progress.
 
 ## Testing
 

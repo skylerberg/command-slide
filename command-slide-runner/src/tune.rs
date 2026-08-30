@@ -21,7 +21,8 @@ use command_slide_core::types::GameState;
 use command_slide_core::{initial_state, EvalParams};
 use mcts::Config;
 use mcts_tune::{
-    Checkpoint, CmaEs, CmaParams, Evaluation, Ga, GaParams, Match, Optimizer, Tunable, TuneConfig,
+    Checkpoint, CmaEs, CmaParams, Evaluation, Ga, GaParams, Match, Opponents, Optimizer, Tunable,
+    TuneConfig,
 };
 
 /// The genes, in order. `scale` is deliberately absent.
@@ -177,6 +178,30 @@ impl Match for EvalMatch {
     }
 }
 
+/// Who the candidates are measured against.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum Field {
+    /// Each candidate plays the weights the run started from. Fitness is then
+    /// absolute and comparable across the run, but it saturates: once the
+    /// population wins nine games in ten, the candidates are closer together
+    /// than the error on measuring them and selection ranks noise.
+    Baseline,
+    /// Each candidate plays every other. Nothing to saturate, since the field
+    /// improves with the population, and no fixed opponent to specialise
+    /// against. Fitness is relative, so the population mean is 0.5 every
+    /// generation and progress has to be read from `simulate` instead.
+    RoundRobin,
+}
+
+impl From<Field> for Opponents {
+    fn from(field: Field) -> Self {
+        match field {
+            Field::Baseline => Opponents::Baseline,
+            Field::RoundRobin => Opponents::RoundRobin,
+        }
+    }
+}
+
 /// Which strategy proposes candidates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum Strategy {
@@ -189,6 +214,7 @@ pub enum Strategy {
 
 pub struct TuneArgs {
     pub strategy: Strategy,
+    pub field: Field,
     pub generations: usize,
     pub games_per_eval: usize,
     pub population: usize,
@@ -294,24 +320,46 @@ pub fn run(args: &TuneArgs) {
             checkpoint.generations_done, checkpoint.games, checkpoint.best_fitness,
         );
     }
-    let total_games =
-        population * args.games_per_eval * (args.generations - done.min(args.generations));
+    let remaining = args.generations - done.min(args.generations);
+    let per_generation = match args.field {
+        Field::Baseline => population * args.games_per_eval,
+        Field::RoundRobin => population * (population - 1) / 2 * args.games_per_eval,
+    };
+    let total_games = per_generation * remaining;
+    // Under a round robin every game scores both of its players, so a
+    // candidate's win rate rests on more games than `--games-per-eval` names.
+    let evidence = match args.field {
+        Field::Baseline => args.games_per_eval,
+        Field::RoundRobin => args.games_per_eval * (population - 1),
+    };
+    let shape = match args.field {
+        Field::Baseline => format!("{population} candidates x {} games", args.games_per_eval),
+        Field::RoundRobin => format!(
+            "{} pairings x {} games",
+            population * (population - 1) / 2,
+            args.games_per_eval
+        ),
+    };
     println!(
-        "{} over {} genes: {} generations x {} candidates x {} games = {} games remaining",
+        "{} over {} genes: {remaining} generations x {shape} = {total_games} games remaining",
         optimizer.name(),
         GENES.len(),
-        args.generations - done.min(args.generations),
-        population,
-        args.games_per_eval,
-        total_games,
     );
     println!(
-        "each game at {} iterations, {} rollout plies; win rates carry a standard error of \
-         up to {:.1} points",
+        "each game at {} iterations, {} rollout plies; {} games behind each win rate, so a \
+         standard error of up to {:.1} points",
         args.eval_iterations,
         args.rollout_plies,
-        100.0 * (0.25 / args.games_per_eval as f64).sqrt(),
+        evidence,
+        100.0 * (0.25 / evidence as f64).sqrt(),
     );
+    if args.field == Field::RoundRobin {
+        println!(
+            "candidates play each other, so fitness is relative: the population mean is 0.5 \
+             every generation and the column cannot be read as progress. Compare a generation \
+             against fixed weights with `simulate --params-a` to see that."
+        );
+    }
 
     // The fitness history, which is what makes a finished run readable. Keeping
     // only the best parameters per generation — and not the numbers behind them
@@ -335,6 +383,7 @@ pub fn run(args: &TuneArgs) {
                 games: args.games_per_eval,
                 seed: args.seed,
                 threads: args.threads,
+                opponents: args.field.into(),
             },
             reseed_each_generation: args.reseed_each_generation,
         },
@@ -390,15 +439,28 @@ pub fn run(args: &TuneArgs) {
     write_params(&final_path, &best);
 
     println!(
-        "\n{} games over {} generations. Best measured win rate {:.4}, written to {}",
+        "\n{} games over {} generations, written to {}",
         report.games,
         report.generations,
-        report.best_fitness,
         final_path.display(),
     );
+    match args.field {
+        Field::Baseline => println!(
+            "Best measured win rate {:.4} against the seed weights. That is a maximum over \
+             noisy measurements and is biased upward. Confirm it:",
+            report.best_fitness,
+        ),
+        // A relative score says nothing about strength on its own: 0.71 against
+        // this field is not 0.71 against anything else, and the field moved
+        // while the run was measuring it.
+        Field::RoundRobin => println!(
+            "Scored {:.4} against its own final generation, which is not a strength — fitness \
+             here is relative to a field that moved. Measure it:",
+            report.best_fitness,
+        ),
+    }
     println!(
-        "That number is a maximum over noisy measurements and is biased upward. Confirm it:\n  \
-         run-games -- simulate --games 1000 --params-a {} --iterations-a <shipping budget>",
+        "  run-games -- simulate --games 1000 --params-a {} --iterations-a <shipping budget>",
         final_path.display(),
     );
 

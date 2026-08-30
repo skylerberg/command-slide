@@ -109,6 +109,19 @@ started from, and the win rates drive the search. Every generation writes its
 best weights to `tuning/gen-NNN.json` and appends a line to
 `tuning/history.jsonl`.
 
+By default candidates are measured against the weights the run started from.
+That gives fitness an absolute scale you can read progress from, and it
+saturates: a 100-generation run here plateaued at generation 8 and by generation
+43 the whole population sat between 0.88 and 0.94, closer together than the
+error on measuring them, so selection was ranking noise. `--field round-robin`
+plays the candidates against each other instead. The field improves with the
+population, so there is nothing to saturate and no fixed opponent to specialise
+against, and every game scores two candidates rather than one — at equal cost
+each candidate is measured on twice as many games. The trade is that fitness
+becomes relative: the population mean is 0.5 in every generation by
+construction, so the column stops being a progress bar and `simulate
+--params-a` is how you see whether the run is actually improving.
+
 Three things about it are worth knowing before reading a result.
 
 **Fitness is a win rate, so it is noisy, and that governs the whole design.**

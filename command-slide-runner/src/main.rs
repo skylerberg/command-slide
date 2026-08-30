@@ -61,6 +61,9 @@ enum Command {
         /// Which optimizer proposes candidates.
         #[arg(long, value_enum, default_value_t = tune::Strategy::CmaEs)]
         strategy: tune::Strategy,
+        /// Who candidates are measured against.
+        #[arg(long, value_enum, default_value_t = tune::Field::Baseline)]
+        field: tune::Field,
         #[arg(long, default_value_t = 50)]
         generations: usize,
         /// Games behind each candidate's win rate. The most important number
@@ -496,6 +499,7 @@ fn main() {
         }
         Command::Tune {
             strategy,
+            field,
             generations,
             games_per_eval,
             population,
@@ -508,6 +512,7 @@ fn main() {
             seed,
         } => tune::run(&tune::TuneArgs {
             strategy,
+            field,
             generations,
             games_per_eval,
             population,
