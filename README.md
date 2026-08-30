@@ -86,6 +86,7 @@ pnpm run run-games -- bench                    # search throughput
 pnpm run run-games -- random --games 400       # rules terminate, both wins reachable
 pnpm run run-games -- replay --iterations 4000 # one game, printed move by move
 pnpm run run-games -- simulate --games 40 --iterations-a 20000 --iterations-b 3000
+pnpm run run-games -- tune --generations 50   # search the evaluation weights
 ```
 
 `cargo test` covers each attack pattern against the printed diagrams, the turn
@@ -96,7 +97,45 @@ UI silently at runtime.
 `simulate` is how any change to the evaluation gets judged: play the new numbers
 against the old and count. The search scales monotonically with its budget —
 3k iterations beats 200 by 85%, and 20k beats 3k outright — which is the signal
-that it is doing real work.
+that it is doing real work. Weights load from a file with `--params-a`, which is
+how a tuning run's output gets confirmed.
+
+## Tuning the weights
+
+`tune` searches the fourteen evaluation weights by self-play, on the `mcts-tune`
+crate from the `monte_carlo` repository. Candidates are proposed by CMA-ES (or
+`--strategy ga`), each plays a few hundred games against the weights the run
+started from, and the win rates drive the search. Every generation writes its
+best weights to `tuning/gen-NNN.json` and appends a line to
+`tuning/history.jsonl`.
+
+Three things about it are worth knowing before reading a result.
+
+**Fitness is a win rate, so it is noisy, and that governs the whole design.**
+The standard error over `n` games is at worst `sqrt(0.25 / n)` — 2.5 percentage
+points at 400 games. Candidates that differ by less than that are ranked by
+luck. `--games-per-eval` matters more than `--population`; below about 200 a run
+is measuring noise. To push back on it, every candidate in a generation plays
+the same seeds and every matchup is played from both seats, so a comparison
+carries neither each candidate's own luck nor the first-move advantage.
+
+**`scale` is not tuned.** `evaluate` returns `tanh(difference / scale)` and the
+difference is linear in the weights, so multiplying every weight *and* `scale`
+by the same constant gives a bit-identical evaluation. Tuning both ends of that
+family would spend games wandering a direction that cannot change a game.
+
+**A run's reported best is biased upward.** It is a maximum over noisy
+measurements, so the luckiest candidate wins ties it would lose on a rerun.
+Confirm it before adopting it, at the budget the game actually ships:
+
+```sh
+pnpm run run-games -- simulate --games 1000 \
+  --params-a tuning/best.json --iterations-a 50000 --iterations-b 50000
+```
+
+That last point is the one to watch: weights matter most when the tree is
+shallow, so weights tuned at `--eval-iterations 4000` are tuned for a regime the
+browser's higher difficulties never play in.
 
 ## A note on the game
 

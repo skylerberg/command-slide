@@ -59,6 +59,12 @@ Rust workspace plus a Svelte frontend:
   `src/data/types.ts` to match; the test is what catches the drift.
 - Changes to the evaluation in `search.rs` are judged by
   `pnpm run run-games -- simulate`, playing the new numbers against the old.
+  `--params-a`/`--params-b` load weights from JSON.
+- `pnpm run run-games -- tune` searches those weights by self-play, via the
+  `mcts-tune` crate. `command-slide-runner/src/tune.rs` holds the gene mapping;
+  it lives in the runner, not the core, because `mcts-tune` uses threads and the
+  core compiles to wasm. `scale` is pinned — it is redundant with the weights it
+  divides.
 
 ## Testing
 

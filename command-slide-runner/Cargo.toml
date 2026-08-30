@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 command-slide-core = { path = "../command-slide-core", features = ["time"] }
+mcts.workspace = true
+mcts-tune.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 wyrand.workspace = true

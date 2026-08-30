@@ -6,7 +6,8 @@ resolver = "2"
 # Pinned to a commit rather than a branch: an unpinned engine would let a
 # change over there move the AI here with no commit in this repository to
 # explain it. Bump deliberately, alongside whatever needs the newer engine.
-mcts = { git = "https://github.com/skylerberg/monte_carlo", rev = "624f924d47387e1f55e4f16bb5ac4e4dd9abdc09", default-features = false }
+mcts = { git = "https://github.com/skylerberg/monte_carlo", rev = "6a1c87fac06093630ac450b91f43cb5c7c428c24", default-features = false }
+mcts-tune = { git = "https://github.com/skylerberg/monte_carlo", rev = "6a1c87fac06093630ac450b91f43cb5c7c428c24" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 wyrand = "0.4"

@@ -16,6 +16,8 @@ use command_slide_core::types::{
 use command_slide_core::{initial_state, EvalParams};
 use wyrand::WyRand;
 
+mod tune;
+
 #[derive(Parser)]
 #[command(name = "command-slide-runner", about = "Command Slide batch simulation")]
 struct Cli {
@@ -44,6 +46,48 @@ enum Command {
         /// Rollout plies for configuration B.
         #[arg(long, default_value_t = 8)]
         rollout_b: u32,
+        /// Evaluation weights for configuration A, as JSON. Defaults to the
+        /// built-in weights, so this is how a tuning run's output gets judged.
+        #[arg(long)]
+        params_a: Option<std::path::PathBuf>,
+        /// Evaluation weights for configuration B, as JSON.
+        #[arg(long)]
+        params_b: Option<std::path::PathBuf>,
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+    },
+    /// Search the evaluation weights for stronger ones by self-play.
+    Tune {
+        /// Which optimizer proposes candidates.
+        #[arg(long, value_enum, default_value_t = tune::Strategy::CmaEs)]
+        strategy: tune::Strategy,
+        #[arg(long, default_value_t = 50)]
+        generations: usize,
+        /// Games behind each candidate's win rate. The most important number
+        /// here: below about 200 a generation is ranking luck, because a win
+        /// rate over n games carries a standard error of up to sqrt(0.25 / n).
+        #[arg(long, default_value_t = 400)]
+        games_per_eval: usize,
+        /// Candidates per generation. Zero lets CMA-ES pick the standard
+        /// 4 + floor(3 ln n); the GA falls back to 20.
+        #[arg(long, default_value_t = 0)]
+        population: usize,
+        /// Search iterations in each evaluation game. Weights matter most when
+        /// the tree is shallow, so a run at a budget far below the shipping one
+        /// is tuning for a regime the game does not play in.
+        #[arg(long, default_value_t = 4_000)]
+        eval_iterations: u32,
+        #[arg(long, default_value_t = 8)]
+        rollout_plies: u32,
+        /// Draw fresh game seeds each generation, so a candidate cannot be
+        /// selected for suiting one fixed set of games.
+        #[arg(long)]
+        reseed: bool,
+        /// Weights to start from, as JSON. Defaults to the built-in ones.
+        #[arg(long)]
+        seed_params: Option<std::path::PathBuf>,
+        #[arg(long, default_value = "tuning")]
+        output: std::path::PathBuf,
         #[arg(long, default_value_t = 1)]
         seed: u64,
     },
@@ -108,11 +152,11 @@ impl GameResult {
     }
 }
 
-fn config(iterations: u32, rollout_plies: u32) -> AiConfig {
+fn config(iterations: u32, rollout_plies: u32, params: EvalParams) -> AiConfig {
     AiConfig {
         iterations,
         context: SearchContext {
-            params: EvalParams::default(),
+            params,
             rollout_plies,
         },
         ..AiConfig::default()
@@ -365,7 +409,7 @@ fn describe(event: &GameEvent) -> String {
 fn replay(iterations: u32, seed: u64) {
     let mut state = initial_state();
     let mut rng = WyRand::seed_from_u64(seed);
-    let config = config(iterations, 8);
+    let config = config(iterations, 8, EvalParams::default());
     let mut ais = [Ai::new(&state), Ai::new(&state)];
 
     println!("{}", render(&state));
@@ -404,10 +448,15 @@ fn main() {
             iterations_b,
             rollout_a,
             rollout_b,
+            params_a,
+            params_b,
             seed,
         } => {
-            let a = config(iterations_a, rollout_a);
-            let b = config(iterations_b, rollout_b);
+            let weights = |path: &Option<std::path::PathBuf>| {
+                path.as_deref().map(tune::load_params).unwrap_or_default()
+            };
+            let a = config(iterations_a, rollout_a, weights(&params_a));
+            let b = config(iterations_b, rollout_b, weights(&params_b));
             // Half the games with A moving first, half with B, so the
             // first-move advantage cancels rather than being measured.
             let half = games / 2;
@@ -416,8 +465,18 @@ fn main() {
                 let configs = if index < half { [a, b] } else { [b, a] };
                 play_game(&configs, seed.wrapping_add(index as u64))
             });
-            println!("A: {iterations_a} iterations, {rollout_a} rollout plies");
-            println!("B: {iterations_b} iterations, {rollout_b} rollout plies");
+            let named = |path: &Option<std::path::PathBuf>| match path {
+                Some(path) => path.display().to_string(),
+                None => String::from("built-in weights"),
+            };
+            println!(
+                "A: {iterations_a} iterations, {rollout_a} rollout plies, {}",
+                named(&params_a)
+            );
+            println!(
+                "B: {iterations_b} iterations, {rollout_b} rollout plies, {}",
+                named(&params_b)
+            );
             summarize(&results, half);
             println!("{games} games in {:.1}s", started.elapsed().as_secs_f64());
         }
@@ -429,10 +488,34 @@ fn main() {
             summarize(&results, games);
             println!("{games} games in {:.1}s", started.elapsed().as_secs_f64());
         }
+        Command::Tune {
+            strategy,
+            generations,
+            games_per_eval,
+            population,
+            eval_iterations,
+            rollout_plies,
+            reseed,
+            seed_params,
+            output,
+            seed,
+        } => tune::run(&tune::TuneArgs {
+            strategy,
+            generations,
+            games_per_eval,
+            population,
+            eval_iterations,
+            rollout_plies,
+            seed,
+            reseed_each_generation: reseed,
+            seed_params,
+            output,
+            threads: cli.threads,
+        }),
         Command::Replay { iterations, seed } => replay(iterations, seed),
         Command::Bench { iterations } => {
             let state = initial_state();
-            let config = config(iterations, 8);
+            let config = config(iterations, 8, EvalParams::default());
             let mut rng = WyRand::seed_from_u64(0xC0FFEE);
             let started = Instant::now();
             let result = Ai::new(&state).search(&state, 0, &config, None, &mut rng);

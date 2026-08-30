@@ -316,7 +316,12 @@ impl AiConfig {
         }
     }
 
-    fn mcts_config(&self) -> Config {
+    /// The search configuration this budget describes.
+    ///
+    /// Public so that offline tooling measures the parameters against the same
+    /// search the game runs, rather than against a second copy of these numbers
+    /// that can drift from it.
+    pub fn mcts_config(&self) -> Config {
         Config {
             iterations: self.iterations,
             time_limit_ms: self.time_limit_ms,
