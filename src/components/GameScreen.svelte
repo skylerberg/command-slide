@@ -93,8 +93,9 @@
     return null
   })
 
-  // When one seat is human the board keeps that side's perspective even while
-  // the opponent thinks; a hot-seat game follows whoever is to move.
+  // Whose controls are live. One human seat keeps them that side's even while
+  // the opponent thinks; hot-seat and watched games have no such side, so they
+  // follow whoever is to move. It is `orientation` that holds still.
   let viewer = $derived(humanSeats.length === 1 ? humanSeats[0] : game.currentPlayer)
 
   /** The side drawn nearest: yours, when exactly one seat is yours. Hot-seat

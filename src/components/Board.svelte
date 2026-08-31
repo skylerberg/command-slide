@@ -41,8 +41,10 @@
     slideOutcomes: SlideOutcome[]
     /** Attackers of the volley in progress still to fire, the current one first. */
     pendingAttackers: Square[]
-    /** The seat the human is playing, or null when watching. */
-    viewer: number | null
+    /** The side the controls answer to: your seat in a solo game, and whoever
+        is to move when two players share the screen or neither of them is
+        human. Never absent — see `orientation` for the side that stays put. */
+    viewer: number
     /** The side along the bottom edge, facing the other across the board. */
     orientation: number
     showThreats: boolean
@@ -198,7 +200,7 @@
         marks: keys(threatened(hoveredSlide)),
       }
     }
-    const preview = viewer === null || attacker !== null ? null : volley[viewer]
+    const preview = attacker !== null ? null : volley[viewer]
     return {
       covered: keys(preview?.covered ?? []),
       marks: preview ? keys(threatened(preview)) : new Set<string>(),
@@ -206,7 +208,7 @@
   })
 
   let enemyVolley = $derived.by(() => {
-    const preview = !showThreats || viewer === null ? null : volley[1 - viewer]
+    const preview = showThreats ? volley[1 - viewer] : null
     return {
       covered: keys(preview?.covered ?? []),
       marks: preview ? keys(threatened(preview)) : new Set<string>(),
@@ -240,9 +242,8 @@
       ...(bands.rows.get(square.row) ?? []),
       ...(bands.cols.get(square.col) ?? []),
     ]
-    const mine = viewer ?? 0
-    if (labels.includes(`${1 - mine}-attack`)) return 'band-threat'
-    if (labels.includes(`${mine}-attack`)) return 'band-armed'
+    if (labels.includes(`${1 - viewer}-attack`)) return 'band-threat'
+    if (labels.includes(`${viewer}-attack`)) return 'band-armed'
     if (labels.length > 0) return 'band-move'
     return ''
   }
