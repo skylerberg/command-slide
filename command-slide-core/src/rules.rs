@@ -161,15 +161,6 @@ pub fn initial_state() -> GameState {
     }
 }
 
-/// Whether `line` holds a piece belonging to `player`. Castles do not count:
-/// they are terrain, so a back row emptied of pieces is not a legal destination
-/// even while its castles stand.
-fn line_has_friendly(state: &GameState, player: u8, kind: TokenKind, line: u8) -> bool {
-    GameState::line_squares(kind, line)
-        .filter_map(|square| state.piece_at(square))
-        .any(|piece| piece.owner == player)
-}
-
 /// Tokens the current player may slide: both on their first turn, otherwise
 /// just the one showing its movement face.
 fn slidable_tokens(state: &GameState) -> Vec<TokenKind> {
@@ -289,24 +280,15 @@ pub fn legal_choices_into(state: &GameState, out: &mut Vec<Choice>) {
     match state.phase {
         Phase::Slide => {
             let player = state.current_player;
-            let slidable = slidable_tokens(state);
-            for &kind in &slidable {
+            // Any line but the one the token already holds: a token may be
+            // parked on a line empty of your pieces, arming a volley for a
+            // piece you have yet to walk into it.
+            for kind in slidable_tokens(state) {
                 let current = state.token(player, kind).line;
                 for line in 0..GameState::line_count(kind) {
-                    if line != current && line_has_friendly(state, player, kind, line) {
+                    if line != current {
                         out.push(Choice::Slide { token: kind, line });
                     }
-                }
-            }
-            // A player whose every piece sits on the token's current line has
-            // nowhere legal to slide. Rather than deadlock, the token holds
-            // its line; the turn otherwise proceeds normally.
-            if out.is_empty() {
-                for &kind in &slidable {
-                    out.push(Choice::Slide {
-                        token: kind,
-                        line: state.token(player, kind).line,
-                    });
                 }
             }
         }
@@ -1253,7 +1235,7 @@ mod tests {
     }
 
     #[test]
-    fn a_slide_must_change_line_and_needs_a_friendly_piece_there() {
+    fn a_slide_must_change_line_but_needs_no_piece_there() {
         let state = initial_state();
         let choices = legal_choices(&state);
 
@@ -1262,18 +1244,50 @@ mod tests {
                 panic!("the opening decision is a slide");
             };
             assert_ne!(line, state.token(0, token).line, "the token must move");
-            assert!(
-                GameState::line_squares(token, line)
-                    .filter_map(|square| state.piece_at(square))
-                    .any(|piece| piece.owner == 0),
-                "{choice:?} names a line with no friendly piece"
-            );
         }
 
-        // Light's pieces occupy rows 0 and 1 and columns 2 through 6. The row
-        // token sits on row 0, so row 1 is its only destination; the column
-        // token sits on column 0, so all five occupied columns are open.
-        assert_eq!(choices.len(), 1 + 5);
+        // Both tokens are free on the first turn, and every line but the one
+        // each already holds is open, empty of pieces or not.
+        assert_eq!(choices.len(), (BOARD_ROWS - 1) + (BOARD_COLS - 1));
+        assert!(
+            choices.contains(&Choice::Slide {
+                token: TokenKind::Row,
+                line: 3,
+            }),
+            "the empty middle rank is a legal destination"
+        );
+    }
+
+    #[test]
+    fn a_token_parked_on_an_empty_line_passes_and_still_arms_its_volley() {
+        let mut state = initial_state();
+        let empty = 3;
+
+        apply(
+            &mut state,
+            &Choice::Slide {
+                token: TokenKind::Row,
+                line: empty,
+            },
+        );
+
+        assert_eq!(state.phase, Phase::Activate);
+        assert_eq!(
+            legal_choices(&state),
+            vec![Choice::Pass],
+            "an empty line offers no move, only the pass"
+        );
+
+        apply(&mut state, &Choice::Pass);
+        assert_eq!(
+            state.token(0, TokenKind::Row),
+            Token {
+                line: empty,
+                face: TokenFace::Attack,
+            },
+            "the token stays on the empty rank, armed for next turn"
+        );
+        assert_eq!(state.current_player, 1);
     }
 
     #[test]

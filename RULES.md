@@ -85,8 +85,9 @@ flip it to its attack face.
 **Every turn after.** Slide whichever token still shows its movement face, then
 activate and flip **both** tokens, in whatever order you choose.
 
-A token must slide to a *different* line, and that line must hold at least one
-piece of yours. Castles do not count — they are terrain.
+A token must slide to a *different* line. The line need hold nothing of yours:
+a token may be parked on an empty rank or file to arm a volley for a piece that
+walks in next turn, and a movement face with no piece to move simply passes.
 
 Because every turn flips both tokens, exactly one token shows a movement face at
 the start of each turn after the first. **The token you slid last turn is the
@@ -152,8 +153,8 @@ its rubble bears on e1, three squares along the back rank.
 
 ## Interpretations
 
-The printed rules leave a few things unstated. Where a reading had to be
-chosen, this is the one the engine implements:
+The printed rules leave a few things unstated, and one of them the engine sets
+aside outright. Where a reading had to be chosen, this is the one it implements:
 
 * **Castles are terrain.** The rules text says three castles and the printed
   board draws two per side — but the back-rank middle square is shaded like the
@@ -165,9 +166,12 @@ chosen, this is the one the engine implements:
 * **An enemy castle blocks a slide entirely.** "You cannot move on to an
   opponent's castle" is read as an obstacle rather than a forbidden
   destination: a slide stops before it, the way it stops before a piece.
-* **A slide must change lines.** "Slide the movement token" is read as requiring
-  actual movement. If a side's every piece sits on its token's current line it
-  has no legal destination; rather than deadlock, the token holds its line.
+* **A slide must change lines, and nothing else restricts it.** "Slide the
+  movement token" is read as requiring actual movement, so a token never
+  re-picks the line it holds. The requirement that the destination hold a piece
+  of yours is the one printed rule set aside: aiming a volley at a line before
+  anything of yours stands there is a plan worth having, and without it a side
+  whose every piece sat on the token's line had no legal slide at all.
 * **Moves never capture.** "Pieces do not move when attacking" is read as the
   converse too: movement and attack are separate, and a piece may not be taken
   by being moved onto.
