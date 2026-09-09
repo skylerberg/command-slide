@@ -273,8 +273,8 @@
         .map((choice) => tokenWord(choice.token))
       const unique = [...new Set(movable)]
       return unique.length > 1
-        ? 'Opening move: slide either command token to a line holding one of your pieces.'
-        : `Slide your ${unique[0]} token to a ${unique[0]} holding one of your pieces.`
+        ? 'Opening move: slide either command token to any other rank or file.'
+        : `Slide your ${unique[0]} token to any other ${unique[0]}.`
     }
     if (game.phase === 'order') return 'Both activations are ready — which fires first?'
     const kind = pendingTokens(game)[0]
@@ -297,7 +297,7 @@
   let guidance = $derived.by(() => {
     if (game.outcome || !isHumanTurn) return ''
     if (game.phase === 'slide') {
-      return 'The line you choose is also where this token volleys next turn.'
+      return 'The line you choose is also where this token volleys next turn, empty of your pieces or not.'
     }
     if (game.phase === 'order') {
       return 'A volley counts only the pieces standing on its line the moment it fires.'

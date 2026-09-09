@@ -90,7 +90,10 @@
           then activate and flip <em>both</em> tokens in whatever order you choose.
         </li>
       </ul>
-      <p>A token may only slide to a line that holds a piece of yours, and it must change lines.</p>
+      <p>
+        A token must change lines, and that is the only restriction: a rank or file with no piece
+        of yours on it is a legal destination, and its movement face simply passes.
+      </p>
       <p class="aside">
         So the token you slid last turn is the one that fires this turn, from the line you put it
         on. Every attack is announced a full turn before it lands.
